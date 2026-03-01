@@ -11,6 +11,7 @@ const db = {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=${order}.desc`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
+    if (!res.ok) throw new Error(`Fetch failed: ${res.statusText}`);
     return res.json();
   },
   async insert(table, data) {
@@ -19,6 +20,7 @@ const db = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
+    if (!res.ok) throw new Error(`Insert failed: ${res.statusText}`);
     return res.json();
   },
   async update(table, id, data) {
@@ -27,13 +29,15 @@ const db = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
+    if (!res.ok) throw new Error(`Update failed: ${res.statusText}`);
     return res.json();
   },
   async delete(table, id) {
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
+    if (!res.ok) throw new Error(`Delete failed: ${res.statusText}`);
   }
 };
 
@@ -214,18 +218,34 @@ function ContactsTab({ contacts, calls, promos, agents, onRefresh, showToast }) 
   async function save() {
     if (!form.name) return;
     setSaving(true);
-    if (selected) { await db.update("contacts", selected.id, form); showToast("Contact updated ✓"); }
-    else { await db.insert("contacts", form); showToast("Contact added ✓"); }
-    setSaving(false);
-    setModal(null);
-    onRefresh();
+    try {
+      if (selected) { 
+        await db.update("contacts", selected.id, form); 
+        showToast("Contact updated ✓"); 
+      } else { 
+        await db.insert("contacts", form); 
+        showToast("Contact added ✓"); 
+      }
+      setModal(null);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      showToast("Error saving contact.", "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function remove(id) {
     if (!confirm("Are you sure you want to delete this contact?")) return;
-    await db.delete("contacts", id);
-    showToast("Contact deleted", "error");
-    onRefresh();
+    try {
+      await db.delete("contacts", id);
+      showToast("Contact deleted", "error");
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      showToast("Error deleting contact.", "error");
+    }
   }
 
   return (
@@ -327,11 +347,28 @@ function LogCallModal({ contacts, promos, agents, defaultAgent, onClose, onSaved
     setSaving(true);
     const today = new Date().toISOString().slice(0, 10);
     const now = new Date().toTimeString().slice(0, 5);
-    await db.insert("call_logs", { ...form, call_date: today, call_time: now, callback_done: false });
-    showToast("Call log successfully recorded.");
-    setSaving(false);
-    onSaved();
-    onClose();
+    
+    try {
+      // FIX: Clean the data to prevent Postgres type rejection errors
+      const payload = { 
+        ...form, 
+        duration_minutes: form.duration_minutes ? parseInt(form.duration_minutes) : null,
+        callback_date: form.callback_date ? form.callback_date : null,
+        call_date: today, 
+        call_time: now, 
+        callback_done: false 
+      };
+
+      await db.insert("call_logs", payload);
+      showToast("Call log successfully recorded.");
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      showToast("Error saving data. Check console.", "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -415,9 +452,13 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   ];
 
   async function markDone(id) {
-    await db.update("call_logs", id, { callback_done: true });
-    showToast("Task completed ✓");
-    onRefresh();
+    try {
+      await db.update("call_logs", id, { callback_done: true });
+      showToast("Task completed ✓");
+      onRefresh();
+    } catch (err) {
+      showToast("Error updating task.", "error");
+    }
   }
 
   return (
@@ -586,9 +627,13 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
   ];
 
   async function markDone(id) {
-    await db.update("call_logs", id, { callback_done: true });
-    showToast("Task completed ✓");
-    onRefresh();
+    try {
+      await db.update("call_logs", id, { callback_done: true });
+      showToast("Task completed ✓");
+      onRefresh();
+    } catch (err) {
+      showToast("Error updating task.", "error");
+    }
   }
 
   return (
@@ -831,19 +876,27 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   }
 
-  async function loadAll() {
-    setLoading(true);
-    const [c, cl, a, p] = await Promise.all([
-      db.get("contacts"), db.get("call_logs"), db.get("agents", "name"), db.get("promotions")
-    ]);
-    setContacts(Array.isArray(c) ? c : []);
-    setCalls(Array.isArray(cl) ? cl : []);
-    setAgents(Array.isArray(a) ? a : []);
-    setPromos(Array.isArray(p) ? p : []);
-    setLoading(false);
+  // FIX: Added 'isBackgroundRefresh' so the UI doesn't visually unmount when fetching
+  async function loadAll(isBackgroundRefresh = false) {
+    if (!isBackgroundRefresh) setLoading(true);
+    
+    try {
+      const [c, cl, a, p] = await Promise.all([
+        db.get("contacts"), db.get("call_logs"), db.get("agents", "name"), db.get("promotions")
+      ]);
+      setContacts(Array.isArray(c) ? c : []);
+      setCalls(Array.isArray(cl) ? cl : []);
+      setAgents(Array.isArray(a) ? a : []);
+      setPromos(Array.isArray(p) ? p : []);
+    } catch (err) {
+      console.error("Failed to load data:", err);
+      showToast("Network error. Could not fetch latest data.", "error");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(false); }, []);
 
   if (loading) return (
     <div style={{ background: BG_MAIN, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: TEXT_MUTED, fontFamily: "'Inter', system-ui, sans-serif", fontSize: 16, flexDirection: "column", gap: 16 }}>
@@ -853,7 +906,8 @@ export default function App() {
     </div>
   );
 
-  const sharedProps = { contacts, calls, agents, promos, onRefresh: loadAll, showToast };
+  // FIX: Pass true to loadAll so saving triggers a seamless background refresh
+  const sharedProps = { contacts, calls, agents, promos, onRefresh: () => loadAll(true), showToast };
 
   return (
     <>
