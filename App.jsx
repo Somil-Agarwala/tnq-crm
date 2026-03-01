@@ -135,7 +135,7 @@ function LoginScreen({ agents, onLogin }) {
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 36, justifyContent: "center" }}>
           <div style={{ background: BRAND, borderRadius: 10, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📞</div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 22, color: TEXT_MAIN, letterSpacing: "-0.5px" }}>PromoCRM</div>
+            <div style={{ fontWeight: 800, fontSize: 22, color: TEXT_MAIN, letterSpacing: "-0.5px" }}>Tanishq CRM</div>
             <div style={{ color: BRAND, fontSize: 12, fontWeight: 600, letterSpacing: 1 }}>WORKSPACE</div>
           </div>
         </div>
@@ -349,7 +349,6 @@ function LogCallModal({ contacts, promos, agents, defaultAgent, onClose, onSaved
     const now = new Date().toTimeString().slice(0, 5);
     
     try {
-      // FIX: Clean the data to prevent Postgres type rejection errors
       const payload = { 
         ...form, 
         duration_minutes: form.duration_minutes ? parseInt(form.duration_minutes) : null,
@@ -467,7 +466,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
       <div style={{ background: BG_CARD, borderBottom: `1px solid ${BORDER}`, padding: "0 32px", display: "flex", alignItems: "center", height: 64, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginRight: 40 }}>
           <div style={{ background: BRAND, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
-          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: "-0.5px" }}>PromoCRM</span>
+          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: "-0.5px" }}>Tanishq CRM</span>
         </div>
         <div style={{ display: "flex", gap: 8, flex: 1 }}>
           {TABS.map(t => (
@@ -642,7 +641,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
       <div style={{ background: BG_CARD, borderBottom: `1px solid ${BORDER}`, padding: "0 32px", display: "flex", alignItems: "center", height: 64, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginRight: 32 }}>
           <div style={{ background: BRAND, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
-          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: "-0.5px" }}>PromoCRM</span>
+          <span style={{ fontWeight: 800, fontSize: 16, letterSpacing: "-0.5px" }}>Tanishq CRM</span>
           <Badge label="ADMIN" color={BRAND} />
         </div>
         <div style={{ display: "flex", gap: 8, flex: 1, overflowX: "auto" }}>
@@ -876,7 +875,6 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   }
 
-  // FIX: Added 'isBackgroundRefresh' so the UI doesn't visually unmount when fetching
   async function loadAll(isBackgroundRefresh = false) {
     if (!isBackgroundRefresh) setLoading(true);
     
@@ -900,17 +898,27 @@ export default function App() {
 
   if (loading) return (
     <div style={{ background: BG_MAIN, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: TEXT_MUTED, fontFamily: "'Inter', system-ui, sans-serif", fontSize: 16, flexDirection: "column", gap: 16 }}>
+      {/* This style block is injected here to globally reset the browser's default CSS. 
+        It removes the 8px body margin (the white border) and sets a dark background.
+      */}
+      <style>{`
+        body { margin: 0; padding: 0; background: ${BG_MAIN}; }
+        * { box-sizing: border-box; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      `}</style>
       <div style={{ width: 40, height: 40, border: `3px solid ${BORDER}`, borderTop: `3px solid ${BRAND}`, borderRadius: "50%", animation: "spin 1s linear infinite" }} />
       Loading Workspace...
-      <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
     </div>
   );
 
-  // FIX: Pass true to loadAll so saving triggers a seamless background refresh
   const sharedProps = { contacts, calls, agents, promos, onRefresh: () => loadAll(true), showToast };
 
   return (
     <>
+      <style>{`
+        body { margin: 0; padding: 0; background: ${BG_MAIN}; }
+        * { box-sizing: border-box; }
+      `}</style>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
       {!user && <LoginScreen agents={agents} onLogin={setUser} />}
       {user?.role === "admin" && <AdminPage {...sharedProps} onLogout={() => setUser(null)} />}
