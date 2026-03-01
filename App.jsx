@@ -342,8 +342,12 @@ function LogCallModal({ contacts, promos, agents, defaultAgent, onClose, onSaved
   const [form, setForm] = useState({ contact_name: "", agent_name: defaultAgent || "", promo_name: "", duration_minutes: "", outcome: "Interested", interest_level: "Medium", callback_date: "", notes: "" });
   const [saving, setSaving] = useState(false);
 
+  // Validation logic to ensure callback date is required if "Callback Requested"
+  const isCallbackReq = form.outcome === "Callback Requested";
+  const canSave = form.contact_name && form.agent_name && (!isCallbackReq || form.callback_date);
+
   async function save() {
-    if (!form.contact_name || !form.agent_name) return;
+    if (!canSave) return;
     setSaving(true);
     const today = new Date().toISOString().slice(0, 10);
     const now = new Date().toTimeString().slice(0, 5);
@@ -392,7 +396,7 @@ function LogCallModal({ contacts, promos, agents, defaultAgent, onClose, onSaved
           <label style={S.lbl}>Campaign / Promotion</label>
           <select value={form.promo_name} onChange={e => setForm({ ...form, promo_name: e.target.value })} style={S.inp}>
             <option value="">Select campaign...</option>
-            {promos.map(p => <option key={p.id}>{p.name}</option>)}
+            {promos.filter(p => p.status === "Active").map(p => <option key={p.id}>{p.name}</option>)}
           </select>
         </div>
         <div>
@@ -412,8 +416,15 @@ function LogCallModal({ contacts, promos, agents, defaultAgent, onClose, onSaved
           </select>
         </div>
         <div style={{ gridColumn: "span 2" }}>
-          <label style={S.lbl}>Schedule Callback (Optional)</label>
-          <input type="date" value={form.callback_date} onChange={e => setForm({ ...form, callback_date: e.target.value })} style={S.inp} />
+          <label style={S.lbl}>
+            Schedule Callback {isCallbackReq ? <span style={{ color: "#ef4444" }}>*Required</span> : <span style={{ color: TEXT_MUTED }}>(Optional)</span>}
+          </label>
+          <input 
+            type="date" 
+            value={form.callback_date} 
+            onChange={e => setForm({ ...form, callback_date: e.target.value })} 
+            style={{ ...S.inp, border: (isCallbackReq && !form.callback_date) ? "1px solid #ef4444" : `1px solid ${BORDER}` }} 
+          />
         </div>
         <div style={{ gridColumn: "span 2" }}>
           <label style={S.lbl}>Call Notes</label>
@@ -421,8 +432,8 @@ function LogCallModal({ contacts, promos, agents, defaultAgent, onClose, onSaved
         </div>
       </div>
       <div style={{ display: "flex", gap: 12, marginTop: 32 }}>
-        <button onClick={save} disabled={saving || !form.contact_name || !form.agent_name}
-          style={{ flex: 1, background: (form.contact_name && form.agent_name) ? BRAND : BG_MAIN, color: (form.contact_name && form.agent_name) ? BRAND_TEXT : TEXT_MUTED, border: `1px solid ${(form.contact_name && form.agent_name) ? BRAND : BORDER}`, borderRadius: 8, padding: 12, fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+        <button onClick={save} disabled={saving || !canSave}
+          style={{ flex: 1, background: canSave ? BRAND : BG_MAIN, color: canSave ? BRAND_TEXT : TEXT_MUTED, border: `1px solid ${canSave ? BRAND : BORDER}`, borderRadius: 8, padding: 12, fontWeight: 600, fontSize: 14, cursor: canSave ? "pointer" : "not-allowed" }}>
           {saving ? "Submitting..." : "Submit Log"}
         </button>
         <button onClick={onClose} style={{ flex: 1, background: "transparent", color: TEXT_MAIN, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
@@ -600,6 +611,12 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
 function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showToast }) {
   const [tab, setTab] = useState("dashboard");
   const [showLogCall, setShowLogCall] = useState(false);
+  
+  // States for Campaign Editing
+  const [promoModal, setPromoModal] = useState(false);
+  const [promoForm, setPromoForm] = useState({ name: "", description: "", status: "Active", start_date: "", end_date: "" });
+  const [selectedPromo, setSelectedPromo] = useState(null);
+  const [savingPromo, setSavingPromo] = useState(false);
 
   const conversions = calls.filter(c => c.outcome === "Converted").length;
   const convRate = calls.length ? Math.round((conversions / calls.length) * 100) : 0;
@@ -632,6 +649,40 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
       onRefresh();
     } catch (err) {
       showToast("Error updating task.", "error");
+    }
+  }
+
+  // Admin Campaign Functions
+  function openAddPromo() {
+    setSelectedPromo(null);
+    setPromoForm({ name: "", description: "", status: "Active", start_date: "", end_date: "" });
+    setPromoModal(true);
+  }
+
+  function openEditPromo(p) {
+    setSelectedPromo(p);
+    setPromoForm({ name: p.name, description: p.description || "", status: p.status || "Active", start_date: p.start_date || "", end_date: p.end_date || "" });
+    setPromoModal(true);
+  }
+
+  async function savePromo() {
+    if (!promoForm.name) return;
+    setSavingPromo(true);
+    try {
+      if (selectedPromo) {
+        await db.update("promotions", selectedPromo.id, promoForm);
+        showToast("Campaign updated ✓");
+      } else {
+        await db.insert("promotions", promoForm);
+        showToast("Campaign created ✓");
+      }
+      setPromoModal(false);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      showToast("Error saving campaign.", "error");
+    } finally {
+      setSavingPromo(false);
     }
   }
 
@@ -780,7 +831,13 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
 
         {tab === "promos" && (
           <div>
-            <div style={{ color: TEXT_MAIN, fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px", marginBottom: 24 }}>Campaign Performance</div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24, alignItems: "center" }}>
+              <div style={{ color: TEXT_MAIN, fontSize: 24, fontWeight: 800, letterSpacing: "-0.5px" }}>Campaign Performance</div>
+              <button onClick={openAddPromo} style={{ background: BRAND, color: BRAND_TEXT, border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
+                + New Campaign
+              </button>
+            </div>
+            
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
               {promos.map(p => {
                 const pitched = calls.filter(c => c.promo_name === p.name).length;
@@ -790,7 +847,10 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
                     {p.status === "Active" && <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 3, background: "#10b981" }} />}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                       <div style={{ fontWeight: 700, fontSize: 16, color: TEXT_MAIN }}>{p.name}</div>
-                      <Badge label={p.status} color={p.status === "Active" ? "#10b981" : TEXT_MUTED} />
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <Badge label={p.status} color={p.status === "Active" ? "#10b981" : TEXT_MUTED} />
+                        <button onClick={() => openEditPromo(p)} style={{ background: "transparent", border: `1px solid ${BORDER}`, color: TEXT_MUTED, borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Edit</button>
+                      </div>
                     </div>
                     <div style={{ color: TEXT_MUTED, fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>{p.description}</div>
                     <div style={{ color: TEXT_MUTED, fontSize: 12, marginBottom: 20, fontWeight: 500, background: BG_MAIN, padding: "6px 10px", borderRadius: 6, display: "inline-block" }}>
@@ -854,6 +914,46 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
         <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={null}
           onClose={() => setShowLogCall(false)} onSaved={onRefresh} showToast={showToast} />
       )}
+
+      {/* Admin Promo/Campaign Editor Modal */}
+      {promoModal && (
+        <Modal title={selectedPromo ? "Edit Campaign" : "New Campaign"} onClose={() => setPromoModal(false)}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
+              <label style={S.lbl}>Campaign Name</label>
+              <input value={promoForm.name} onChange={e => setPromoForm({...promoForm, name: e.target.value})} style={S.inp} placeholder="e.g. Summer Sale 2026" />
+            </div>
+            <div>
+              <label style={S.lbl}>Description</label>
+              <input value={promoForm.description} onChange={e => setPromoForm({...promoForm, description: e.target.value})} style={S.inp} placeholder="Campaign details..." />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div>
+                <label style={S.lbl}>Start Date</label>
+                <input type="date" value={promoForm.start_date} onChange={e => setPromoForm({...promoForm, start_date: e.target.value})} style={S.inp} />
+              </div>
+              <div>
+                <label style={S.lbl}>End Date</label>
+                <input type="date" value={promoForm.end_date} onChange={e => setPromoForm({...promoForm, end_date: e.target.value})} style={S.inp} />
+              </div>
+            </div>
+            <div>
+              <label style={S.lbl}>Status</label>
+              <select value={promoForm.status} onChange={e => setPromoForm({...promoForm, status: e.target.value})} style={S.inp}>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 32 }}>
+            <button onClick={savePromo} disabled={savingPromo || !promoForm.name}
+              style={{ flex: 1, background: promoForm.name ? BRAND : BG_MAIN, color: promoForm.name ? BRAND_TEXT : TEXT_MUTED, border: `1px solid ${promoForm.name ? BRAND : BORDER}`, borderRadius: 8, padding: 12, fontWeight: 600, fontSize: 14, cursor: promoForm.name ? "pointer" : "not-allowed" }}>
+              {savingPromo ? "Saving..." : selectedPromo ? "Update Campaign" : "Create Campaign"}
+            </button>
+            <button onClick={() => setPromoModal(false)} style={{ flex: 1, background: "transparent", color: TEXT_MAIN, border: `1px solid ${BORDER}`, borderRadius: 8, padding: 12, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -898,9 +998,6 @@ export default function App() {
 
   if (loading) return (
     <div style={{ background: BG_MAIN, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: TEXT_MUTED, fontFamily: "'Inter', system-ui, sans-serif", fontSize: 16, flexDirection: "column", gap: 16 }}>
-      {/* This style block is injected here to globally reset the browser's default CSS. 
-        It removes the 8px body margin (the white border) and sets a dark background.
-      */}
       <style>{`
         body { margin: 0; padding: 0; background: ${BG_MAIN}; }
         * { box-sizing: border-box; }
