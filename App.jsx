@@ -62,7 +62,6 @@ function Spinner() {
   return <div style={{ display: "flex", justifyContent: "center", padding: 60, color: "#64748b" }}>Loading...</div>;
 }
 
-// ── STAT CARD ───────────────────────────────────────────────
 function StatCard({ label, value, accent = "#e8a020", sub }) {
   return (
     <div style={{ background: "#1e2436", border: "1px solid #2d3550", borderRadius: 14, padding: "18px 22px", flex: 1, minWidth: 120 }}>
@@ -73,7 +72,6 @@ function StatCard({ label, value, accent = "#e8a020", sub }) {
   );
 }
 
-// ── MODAL WRAPPER ────────────────────────────────────────────
 function Modal({ title, onClose, children, width = 500 }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000000bb", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
@@ -90,6 +88,10 @@ function Modal({ title, onClose, children, width = 500 }) {
 
 // ── MAIN APP ─────────────────────────────────────────────────
 export default function CRM() {
+  const [user, setUser] = useState(null); // The logged-in agent/admin
+  const [pinInput, setPinInput] = useState("");
+  const [loginError, setLoginError] = useState("");
+  
   const [tab, setTab] = useState("dashboard");
   const [contacts, setContacts] = useState([]);
   const [calls, setCalls] = useState([]);
@@ -97,7 +99,7 @@ export default function CRM() {
   const [promos, setPromos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [modal, setModal] = useState(null); // "add_contact" | "log_call" | "edit_contact" | "view_contact"
+  const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -105,32 +107,58 @@ export default function CRM() {
   const [contactForm, setContactForm] = useState({ name: "", phone: "", company: "", city: "", category: "Business", dnc: false, notes: "" });
   const [callForm, setCallForm] = useState({ contact_name: "", agent_name: "", promo_name: "", duration_minutes: "", outcome: "Interested", interest_level: "Medium", callback_date: "", notes: "" });
 
+  // 1. Initial Load for Login (Fetch Agents to check PIN)
+  useEffect(() => {
+    async function fetchAgents() {
+      const a = await db.get("agents", "name");
+      setAgents(Array.isArray(a) ? a : []);
+      setLoading(false);
+    }
+    fetchAgents();
+  }, []);
+
+  function handleLogin(e) {
+    e.preventDefault();
+    const foundUser = agents.find(a => a.pin === pinInput);
+    if (foundUser) {
+      setUser(foundUser);
+      setCallForm(prev => ({ ...prev, agent_name: foundUser.name })); // Preset agent name
+      loadData(); // Load the rest of the CRM data
+    } else {
+      setLoginError("Invalid PIN code.");
+      setPinInput("");
+    }
+  }
+
+  // 2. Load CRM Data after Login
+  async function loadData() {
+    setLoading(true);
+    const [c, cl, p] = await Promise.all([
+      db.get("contacts", "created_at"),
+      db.get("call_logs", "created_at"),
+      db.get("promotions", "created_at"),
+    ]);
+    setContacts(Array.isArray(c) ? c : []);
+    setCalls(Array.isArray(cl) ? cl : []);
+    setPromos(Array.isArray(p) ? p : []);
+    setLoading(false);
+  }
+
   function showToast(msg, type = "success") {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   }
 
-  async function loadAll() {
-    setLoading(true);
-    const [c, cl, a, p] = await Promise.all([
-      db.get("contacts", "created_at"),
-      db.get("call_logs", "created_at"),
-      db.get("agents", "name"),
-      db.get("promotions", "created_at"),
-    ]);
-    setContacts(Array.isArray(c) ? c : []);
-    setCalls(Array.isArray(cl) ? cl : []);
-    setAgents(Array.isArray(a) ? a : []);
-    setPromos(Array.isArray(p) ? p : []);
-    setLoading(false);
-  }
-
-  useEffect(() => { loadAll(); }, []);
-
-  // ── DERIVED STATS ──
-  const conversions = calls.filter(c => c.outcome === "Converted").length;
-  const convRate = calls.length ? Math.round((conversions / calls.length) * 100) : 0;
-  const pendingCallbacks = calls.filter(c => c.callback_date && !c.callback_done);
+  // ── FILTER DATA FOR DASHBOARD BASED ON ROLE ──
+  // Admins see all calls in stats. Agents see ONLY their own calls in stats.
+  const dashboardCalls = user?.role === "admin" ? calls : calls.filter(c => c.agent_name === user?.name);
+  const conversions = dashboardCalls.filter(c => c.outcome === "Converted").length;
+  const convRate = dashboardCalls.length ? Math.round((conversions / dashboardCalls.length) * 100) : 0;
+  
+  // Callbacks: agents see their own callbacks, admins see all
+  const allPendingCallbacks = calls.filter(c => c.callback_date && !c.callback_done);
+  const pendingCallbacks = user?.role === "admin" ? allPendingCallbacks : allPendingCallbacks.filter(c => c.agent_name === user?.name);
+  
   const activePromos = promos.filter(p => p.status === "Active");
 
   const agentStats = agents.map(a => ({
@@ -140,7 +168,7 @@ export default function CRM() {
   })).sort((a, b) => b.converted - a.converted);
 
   const outcomeCounts = Object.keys(outcomeColor).map(o => ({
-    name: o, count: calls.filter(c => c.outcome === o).length
+    name: o, count: dashboardCalls.filter(c => c.outcome === o).length
   })).filter(o => o.count > 0);
 
   // ── FILTERED LISTS ──
@@ -151,6 +179,7 @@ export default function CRM() {
       c.phone?.includes(search)
     ), [contacts, search]);
 
+  // ALL calls are shown in the Call Log tab (read-only for team visibility)
   const filteredCalls = useMemo(() =>
     calls.filter(c =>
       c.contact_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -171,32 +200,42 @@ export default function CRM() {
     setSaving(false);
     setModal(null);
     setSelected(null);
-    loadAll();
+    loadData();
   }
 
   async function saveCall() {
     setSaving(true);
     const today = new Date().toISOString().slice(0, 10);
     const now = new Date().toTimeString().slice(0, 5);
-    await db.insert("call_logs", { ...callForm, call_date: today, call_time: now, callback_done: false });
+    
+    // Ensure agent_name is locked to logged-in user if they are an agent
+    const finalCallData = { 
+        ...callForm, 
+        agent_name: user.role === "admin" ? callForm.agent_name : user.name,
+        call_date: today, 
+        call_time: now, 
+        callback_done: false 
+    };
+
+    await db.insert("call_logs", finalCallData);
     showToast("Call logged ✓");
     setSaving(false);
     setModal(null);
-    setCallForm({ contact_name: "", agent_name: "", promo_name: "", duration_minutes: "", outcome: "Interested", interest_level: "Medium", callback_date: "", notes: "" });
-    loadAll();
+    setCallForm({ contact_name: "", agent_name: user.name, promo_name: "", duration_minutes: "", outcome: "Interested", interest_level: "Medium", callback_date: "", notes: "" });
+    loadData();
   }
 
   async function markCallbackDone(id) {
     await db.update("call_logs", id, { callback_done: true });
     showToast("Callback marked done ✓");
-    loadAll();
+    loadData();
   }
 
   async function deleteContact(id) {
     if (!confirm("Delete this contact?")) return;
     await db.delete("contacts", id);
     showToast("Contact deleted", "error");
-    loadAll();
+    loadData();
   }
 
   function openEditContact(c) {
@@ -205,10 +244,36 @@ export default function CRM() {
     setModal("add_contact");
   }
 
+  // ── LOGIN SCREEN ──
+  if (!user) {
+    return (
+      <div style={{ background: "#0f1420", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
+        <div style={{ background: "#1e2436", border: "1px solid #2d3550", padding: 40, borderRadius: 16, width: 340, textAlign: "center" }}>
+          <div style={{ background: "#e8a020", borderRadius: 8, width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, margin: "0 auto 16px" }}>📞</div>
+          <h2 style={{ color: "#f1f5f9", margin: "0 0 24px 0" }}>PromoCRM Login</h2>
+          <form onSubmit={handleLogin}>
+            <input 
+              type="password" 
+              placeholder="Enter your PIN" 
+              value={pinInput} 
+              onChange={e => setPinInput(e.target.value)} 
+              style={{ ...S.inp, textAlign: "center", fontSize: 24, letterSpacing: 4, padding: "12px", marginBottom: 16 }} 
+              autoFocus
+            />
+            {loginError && <div style={{ color: "#ef4444", fontSize: 13, marginBottom: 16 }}>{loginError}</div>}
+            <button type="submit" style={{ background: "#e8a020", color: "#000", border: "none", borderRadius: 8, padding: "12px", width: "100%", fontWeight: 900, cursor: "pointer", fontSize: 15 }}>
+              Enter System
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   const TABS = [
-    { key: "dashboard", icon: "📊", label: "Dashboard" },
+    { key: "dashboard", icon: "📊", label: "My Dashboard" },
     { key: "contacts", icon: "📋", label: "Contacts" },
-    { key: "calls", icon: "📞", label: "Call Log" },
+    { key: "calls", icon: "📞", label: "Team Call Log" },
     { key: "callbacks", icon: "🔔", label: `Callbacks${pendingCallbacks.length > 0 ? ` (${pendingCallbacks.length})` : ""}` },
     { key: "promos", icon: "🎯", label: "Promotions" },
   ];
@@ -239,7 +304,11 @@ export default function CRM() {
             }}>{t.icon} {t.label}</button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#94a3b8", fontSize: 13, fontWeight: 700 }}>
+            <Avatar name={user.name} size={28} />
+            {user.name} ({user.role})
+          </div>
           <button onClick={() => { setSelected(null); setContactForm({ name: "", phone: "", company: "", city: "", category: "Business", dnc: false, notes: "" }); setModal("add_contact"); }}
             style={{ background: "#1e2436", color: "#f1f5f9", border: "1px solid #2d3550", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             + Contact
@@ -247,6 +316,9 @@ export default function CRM() {
           <button onClick={() => setModal("log_call")}
             style={{ background: "#e8a020", color: "#000", border: "none", borderRadius: 8, padding: "7px 18px", fontSize: 13, fontWeight: 900, cursor: "pointer" }}>
             + Log Call
+          </button>
+          <button onClick={() => { setUser(null); setPinInput(""); }} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+            Logout
           </button>
         </div>
       </div>
@@ -264,41 +336,47 @@ export default function CRM() {
           {/* ════ DASHBOARD ════ */}
           {tab === "dashboard" && (
             <div>
-              <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>OVERVIEW</div>
+              <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, letterSpacing: 2, marginBottom: 12 }}>
+                {user.role === "admin" ? "COMPANY OVERVIEW" : `YOUR PERFORMANCE - ${user.name.toUpperCase()}`}
+              </div>
               <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
                 <StatCard label="Contacts" value={contacts.length} />
-                <StatCard label="Total Calls" value={calls.length} accent="#3b82f6" />
+                <StatCard label={user.role === "admin" ? "Total Calls" : "My Calls"} value={dashboardCalls.length} accent="#3b82f6" />
                 <StatCard label="Conversions" value={conversions} accent="#22c55e" />
                 <StatCard label="Conv. Rate" value={convRate + "%"} accent="#a855f7" />
-                <StatCard label="Pending Callbacks" value={pendingCallbacks.length} accent="#f59e0b" />
+                <StatCard label="My Pending Callbacks" value={pendingCallbacks.length} accent="#f59e0b" />
                 <StatCard label="Active Promos" value={activePromos.length} accent="#e8a020" />
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
                 {/* Outcomes chart */}
                 <div style={{ background: "#1e2436", border: "1px solid #2d3550", borderRadius: 14, padding: 20 }}>
-                  <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, marginBottom: 16 }}>CALL OUTCOMES</div>
+                  <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, marginBottom: 16 }}>
+                     {user.role === "admin" ? "COMPANY CALL OUTCOMES" : "MY CALL OUTCOMES"}
+                  </div>
                   {outcomeCounts.length === 0 && <div style={{ color: "#475569", fontSize: 13 }}>No calls logged yet.</div>}
                   {outcomeCounts.map(o => (
                     <div key={o.name} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
                       <div style={{ width: 130, color: "#cbd5e1", fontSize: 12, flexShrink: 0 }}>{o.name}</div>
                       <div style={{ flex: 1, background: "#0f1420", borderRadius: 4, height: 8 }}>
-                        <div style={{ width: `${(o.count / calls.length) * 100}%`, background: outcomeColor[o.name], height: 8, borderRadius: 4 }} />
+                        <div style={{ width: `${(o.count / dashboardCalls.length) * 100}%`, background: outcomeColor[o.name], height: 8, borderRadius: 4 }} />
                       </div>
                       <div style={{ color: "#64748b", fontSize: 12, width: 20, textAlign: "right" }}>{o.count}</div>
                     </div>
                   ))}
                 </div>
 
-                {/* Agent leaderboard */}
+                {/* Agent leaderboard - Visible to everyone, builds healthy competition */}
                 <div style={{ background: "#1e2436", border: "1px solid #2d3550", borderRadius: 14, padding: 20 }}>
-                  <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, marginBottom: 16 }}>AGENT LEADERBOARD</div>
+                  <div style={{ color: "#475569", fontSize: 10, fontWeight: 700, letterSpacing: 1.5, marginBottom: 16 }}>TEAM LEADERBOARD</div>
                   {agentStats.map((a, i) => (
                     <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                       <div style={{ color: i === 0 ? "#e8a020" : "#334155", fontWeight: 900, fontSize: 15, width: 22 }}>#{i + 1}</div>
                       <Avatar name={a.name} />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>{a.name}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: a.name === user.name ? "#e8a020" : "#f1f5f9" }}>
+                          {a.name} {a.name === user.name && "(You)"}
+                        </div>
                         <div style={{ color: "#475569", fontSize: 11 }}>{a.total} calls logged</div>
                       </div>
                       <Badge label={`${a.converted} converted`} color="#22c55e" />
@@ -393,7 +471,7 @@ export default function CRM() {
                     <tr key={c.id}>
                       <td style={{ ...S.td, fontWeight: 700 }}>{c.contact_name}</td>
                       <td style={{ ...S.td, color: "#64748b", whiteSpace: "nowrap" }}>{c.call_date} {c.call_time?.slice(0, 5)}</td>
-                      <td style={S.td}><Badge label={c.agent_name} color="#e8a020" /></td>
+                      <td style={S.td}><Badge label={c.agent_name} color={c.agent_name === user.name ? "#e8a020" : "#475569"} /></td>
                       <td style={{ ...S.td, maxWidth: 180 }}>{c.promo_name}</td>
                       <td style={{ ...S.td, color: "#64748b", textAlign: "center" }}>{c.duration_minutes}m</td>
                       <td style={S.td}><Badge label={c.outcome} color={outcomeColor[c.outcome] || "#64748b"} /></td>
@@ -526,10 +604,14 @@ export default function CRM() {
             </div>
             <div>
               <label style={S.lbl}>Agent</label>
-              <select value={callForm.agent_name} onChange={e => setCallForm({ ...callForm, agent_name: e.target.value })} style={S.inp}>
-                <option value="">Select agent...</option>
-                {agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}
-              </select>
+              {user.role === "admin" ? (
+                <select value={callForm.agent_name} onChange={e => setCallForm({ ...callForm, agent_name: e.target.value })} style={S.inp}>
+                  <option value="">Select agent...</option>
+                  {agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}
+                </select>
+              ) : (
+                <input value={user.name} disabled style={{ ...S.inp, background: "#0f1420", color: "#64748b" }} />
+              )}
             </div>
             <div>
               <label style={S.lbl}>Promotion Pitched</label>
@@ -564,8 +646,8 @@ export default function CRM() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 12, marginTop: 22 }}>
-            <button onClick={saveCall} disabled={saving || !callForm.contact_name || !callForm.agent_name}
-              style={{ flex: 1, background: (callForm.contact_name && callForm.agent_name) ? "#e8a020" : "#2d3550", color: (callForm.contact_name && callForm.agent_name) ? "#000" : "#475569", border: "none", borderRadius: 8, padding: 12, fontWeight: 900, fontSize: 14, cursor: "pointer" }}>
+            <button onClick={saveCall} disabled={saving || !callForm.contact_name || (user.role === "admin" && !callForm.agent_name)}
+              style={{ flex: 1, background: (callForm.contact_name && (user.role !== "admin" || callForm.agent_name)) ? "#e8a020" : "#2d3550", color: (callForm.contact_name && (user.role !== "admin" || callForm.agent_name)) ? "#000" : "#475569", border: "none", borderRadius: 8, padding: 12, fontWeight: 900, fontSize: 14, cursor: "pointer" }}>
               {saving ? "Saving..." : "Save Call"}
             </button>
             <button onClick={() => setModal(null)} style={{ flex: 1, background: "#252b3b", color: "#f1f5f9", border: "1px solid #2d3550", borderRadius: 8, padding: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
