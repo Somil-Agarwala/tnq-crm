@@ -312,24 +312,24 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, showToast, is
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", company: "", city: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
+  const [form, setForm] = useState({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
 
   const filtered = useMemo(() =>
     contacts.filter(c =>
       (c.name || "").toLowerCase().includes(search.toLowerCase()) ||
-      (c.company || "").toLowerCase().includes(search.toLowerCase()) ||
+      (c.customer_type || "").toLowerCase().includes(search.toLowerCase()) ||
       (c.phone || "").includes(search)
     ), [contacts, search]);
 
   function openAdd() {
     setSelected(null);
-    setForm({ name: "", phone: "", company: "", city: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
+    setForm({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
     setModal("contact");
   }
 
   function openEdit(c) {
     setSelected(c);
-    setForm({ name: c.name, phone: c.phone || "", company: c.company || "", city: c.city || "", category: c.category || "Business", dnc: c.dnc || false, notes: c.notes || "", assigned_agent: c.assigned_agent || "", assigned_promo: c.assigned_promo || "", lead_status: c.lead_status || "Pending" });
+    setForm({ name: c.name, phone: c.phone || "", customer_type: c.customer_type || "", priority: c.priority || "", category: c.category || "Business", dnc: c.dnc || false, notes: c.notes || "", assigned_agent: c.assigned_agent || "", assigned_promo: c.assigned_promo || "", lead_status: c.lead_status || "Pending" });
     setModal("contact");
   }
 
@@ -353,11 +353,11 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, showToast, is
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, alignItems: "center", gap: 12 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍  Search by name, company or phone..."
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍  Search by name, customer type or phone..."
           style={{ ...S.inp, maxWidth: 380 }} />
         <div style={{ display: "flex", gap: 10 }}>
           {isAdmin && (
-            <Btn onClick={() => exportToCSV(contacts.map(c => ({ name: c.name, phone: c.phone, company: c.company, city: c.city, category: c.category, dnc: c.dnc, assigned_agent: c.assigned_agent, notes: c.notes })), "contacts_export.csv")}
+            <Btn onClick={() => exportToCSV(contacts.map(c => ({ name: c.name, phone: c.phone, customer_type: c.customer_type, priority: c.priority, category: c.category, dnc: c.dnc, assigned_agent: c.assigned_agent, notes: c.notes })), "contacts_export.csv")}
               color="#27272a" textColor={C.text}>⬇ Export</Btn>
           )}
           <Btn onClick={openAdd}>+ Add Contact</Btn>
@@ -368,7 +368,7 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, showToast, is
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr>{["Contact", "Phone", "Company", "City", "Type", "Status", isAdmin ? "Assigned Agent" : "Notes", "Actions"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+              <tr>{["Contact", "Phone", "Customer Type", "Priority", "Type", "Status", isAdmin ? "Assigned Agent" : "Notes", "Actions"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={8} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 60 }}>No contacts found.</td></tr>}
@@ -386,8 +386,8 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, showToast, is
                       </div>
                     </td>
                     <td style={{ ...S.td, color: C.muted }}>{c.phone || "—"}</td>
-                    <td style={S.td}>{c.company || "—"}</td>
-                    <td style={{ ...S.td, color: C.muted }}>{c.city || "—"}</td>
+                    <td style={S.td}>{c.customer_type || "—"}</td>
+                    <td style={{ ...S.td, color: C.muted }}>{c.priority || "—"}</td>
                     <td style={S.td}><Badge label={c.category || "Business"} color={c.category === "Business" ? C.brand : C.purple} /></td>
                     <td style={S.td}>{c.dnc ? <Badge label="DNC" color={C.red} /> : <Badge label="Active" color={C.green} />}</td>
                     <td style={{ ...S.td, color: C.muted, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -410,7 +410,7 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, showToast, is
       {modal === "contact" && (
         <Modal title={selected ? "Edit Contact" : "Add New Contact"} onClose={() => setModal(null)}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-            {[["Full Name *", "name"], ["Phone Number", "phone"], ["Company", "company"], ["City", "city"]].map(([label, key]) => (
+            {[["Full Name *", "name"], ["Phone Number", "phone"], ["Customer Type", "customer_type"], ["Priority", "priority"]].map(([label, key]) => (
               <div key={key}>
                 <label style={S.lbl}>{label}</label>
                 <input value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} style={S.inp} />
@@ -596,8 +596,8 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
                     <div style={{ fontWeight: 800, fontSize: 17 }}>{lead.name}</div>
                     <div style={{ color: C.muted, fontSize: 13, marginTop: 4, display: "flex", gap: 20, flexWrap: "wrap" }}>
                       <span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{lead.phone || "No phone"}</span></span>
-                      {lead.company && <span>🏢 {lead.company}</span>}
-                      {lead.city && <span>📍 {lead.city}</span>}
+                      {lead.customer_type && <span>🏢 {lead.customer_type}</span>}
+                      {lead.priority && <span>⭐ {lead.priority}</span>}
                     </div>
                     {lead.assigned_promo && <div style={{ marginTop: 8 }}><Badge label={`Campaign: ${lead.assigned_promo}`} color={C.brand} /></div>}
                   </div>
@@ -827,8 +827,8 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
     setImporting(true);
     try {
       await Promise.all(parsedCsv.map(row => db.insert("contacts", {
-        name: row.name || "Unknown", phone: row.phone || "", company: row.company || "",
-        city: row.city || "", category: "Business", dnc: false,
+        name: row.name || "Unknown", phone: row.phone || "", customer_type: row.customer_type || "",
+        priority: row.priority || "", category: "Business", dnc: false,
         assigned_agent: importAgent, assigned_promo: importPromo, lead_status: "Pending"
       })));
       showToast(`✓ Imported ${parsedCsv.length} leads assigned to ${importAgent}`);
@@ -1222,7 +1222,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
         <Modal title="📥 Import & Assign Leads" onClose={() => { setImportModal(false); setParsedCsv([]); }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <div style={{ background: "#1c1200", border: `1px solid ${C.yellow}33`, borderRadius: 8, padding: 14, color: C.yellow, fontSize: 13, lineHeight: 1.6 }}>
-              Upload a <strong>.csv</strong> file with these column headers: <code style={{ color: C.text }}>name, phone, company, city</code>
+              Upload a <strong>.csv</strong> file with these column headers: <code style={{ color: C.text }}>name, phone, customer_type, priority</code>
             </div>
             <div>
               <label style={S.lbl}>1. Select Campaign</label>
@@ -1235,7 +1235,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
               <label style={S.lbl}>2. Assign to Agent</label>
               <select value={importAgent} onChange={e => setImportAgent(e.target.value)} style={S.inp}>
                 <option value="">Select agent...</option>
-                {agents.filter(a => a.status === "Active").map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                {agents.filter(a => a.status === "Active" && a.role !== "admin").map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
               </select>
             </div>
             <div>
