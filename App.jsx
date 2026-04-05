@@ -173,7 +173,7 @@ function LoginScreen({ agents, onLogin }) {
             <label style={S.lbl}>Your Name</label>
             <select value={selectedAgent} onChange={e => setSelectedAgent(e.target.value)} style={S.inp}>
               <option value="">Select your name...</option>
-              {agents.filter(a => a.status === "Active").map(a => <option key={a.id} value={a.name}>{a.name} — {a.role}</option>)}
+              {agents.filter(a => a.status === "Active" && a.role !== "admin").map(a => <option key={a.id} value={a.name}>{a.name} — {a.role}</option>)}
             </select>
           </div>
         )}
@@ -704,10 +704,15 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
   const [tab, setTab] = useState("dashboard");
   const [showLogCall, setShowLogCall] = useState(false);
 
-  // Promo management
+  // Promo management & Drill-down
   const [promoModal, setPromoModal] = useState(null); // null | "add" | "edit"
   const [selectedPromo, setSelectedPromo] = useState(null);
   const [promoForm, setPromoForm] = useState({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" });
+  
+  // Drill-down states
+  const [viewPromoDetails, setViewPromoDetails] = useState(null); // stores promo object
+  const [viewPromoAgent, setViewPromoAgent] = useState(null); // stores agent string name
+  const [selectedLeads, setSelectedLeads] = useState([]); // array of contact IDs for bulk action
 
   // Agent management
   const [agentModal, setAgentModal] = useState(null); // null | "add" | "edit"
@@ -720,7 +725,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
   const [filterPromo, setFilterPromo] = useState("");
   const [callSearch, setCallSearch] = useState("");
 
-  // Agent drill-down
+  // Agent drill-down (Team tab)
   const [viewAgent, setViewAgent] = useState(null);
 
   // Import leads
@@ -760,6 +765,15 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
     { key: "contacts", label: "Directory" },
   ];
 
+  // Reset drill-downs on tab change
+  function handleTabChange(k) {
+    setTab(k);
+    setViewAgent(null);
+    setViewPromoDetails(null);
+    setViewPromoAgent(null);
+    setSelectedLeads([]);
+  }
+
   // ── Promo CRUD ──
   async function savePromo() {
     if (!promoForm.name) return;
@@ -780,6 +794,28 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
     setSelectedPromo(p);
     setPromoForm({ name: p.name, description: p.description || "", status: p.status, start_date: p.start_date || "", end_date: p.end_date || "", target_audience: p.target_audience || "All" });
     setPromoModal("edit");
+  }
+
+  // ── Bulk Delete Logic ──
+  async function handleWipeSelected() {
+    if (!window.confirm(`Are you sure you want to permanently delete ${selectedLeads.length} leads?`)) return;
+    try {
+      await Promise.all(selectedLeads.map(id => db.delete("contacts", id)));
+      showToast(`${selectedLeads.length} leads removed.`);
+      setSelectedLeads([]);
+      onRefresh();
+    } catch { showToast("Error deleting leads.", "error"); }
+  }
+
+  async function handleWipeAllPending() {
+    const pendingList = contacts.filter(c => c.assigned_promo === viewPromoDetails.name && c.assigned_agent === viewPromoAgent && c.lead_status === "Pending");
+    if (!window.confirm(`Are you sure you want to wipe ALL ${pendingList.length} pending leads assigned to ${viewPromoAgent}?`)) return;
+    try {
+      await Promise.all(pendingList.map(c => db.delete("contacts", c.id)));
+      showToast(`All pending leads for ${viewPromoAgent} wiped.`);
+      setSelectedLeads([]);
+      onRefresh();
+    } catch { showToast("Error deleting leads.", "error"); }
   }
 
   // ── Agent CRUD ──
@@ -848,7 +884,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
         </div>
         <div style={{ display: "flex", gap: 0, flex: 1, overflowX: "auto" }}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => { setTab(t.key); setViewAgent(null); }} style={{
+            <button key={t.key} onClick={() => handleTabChange(t.key)} style={{
               background: "none", border: "none", color: tab === t.key ? C.text : C.muted,
               borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent",
               padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap"
@@ -911,85 +947,189 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
                 })}
               </div>
             </div>
-
-            {/* Pending callbacks summary */}
-            {pendingCallbacks.length > 0 && (
-              <div style={{ background: C.card, border: `1px solid ${C.yellow}33`, borderLeft: `4px solid ${C.yellow}`, borderRadius: 12, padding: 20 }}>
-                <div style={{ color: C.yellow, fontWeight: 700, fontSize: 14, marginBottom: 14 }}>🔔 {pendingCallbacks.length} Pending Callback{pendingCallbacks.length > 1 ? "s" : ""}</div>
-                {pendingCallbacks.slice(0, 4).map(c => (
-                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 0", borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
-                    <span style={{ color: C.yellow, fontWeight: 600, minWidth: 96 }}>{c.callback_date}</span>
-                    <span style={{ fontWeight: 600 }}>{c.contact_name}</span>
-                    <span style={{ color: C.muted }}>→</span>
-                    <span style={{ color: C.brand, fontWeight: 600 }}>{c.agent_name}</span>
-                    <span style={{ color: C.subtle, flex: 1 }}>{c.promo_name}</span>
-                    <button onClick={() => setTab("callbacks")} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>View All</button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
-        {/* ── CAMPAIGNS ── */}
+        {/* ── CAMPAIGNS (DRILL-DOWN ENABLED) ── */}
         {tab === "campaigns" && (
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>Campaign Management</div>
-              <div style={{ display: "flex", gap: 10 }}>
-                <Btn onClick={() => setImportModal(true)} color="#052e16" textColor={C.green} style={{ border: `1px solid ${C.green}44` }}>📥 Import Leads</Btn>
-                <Btn onClick={() => { setSelectedPromo(null); setPromoForm({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" }); setPromoModal("add"); }}>+ New Campaign</Btn>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 20 }}>
-              {promos.map(p => {
-                const pitched = calls.filter(c => c.promo_name === p.name).length;
-                const converted = calls.filter(c => c.promo_name === p.name && c.outcome === "Converted").length;
-                const rate = pitched ? Math.round((converted / pitched) * 100) : 0;
-                const assigned = contacts.filter(c => c.assigned_promo === p.name);
-                const contacted = assigned.filter(c => c.lead_status === "Contacted");
-                const progress = assigned.length ? Math.round((contacted.length / assigned.length) * 100) : 0;
-                return (
-                  <div key={p.id} style={{ background: C.card, border: `1px solid ${p.status === "Active" ? C.green + "44" : C.border}`, borderRadius: 12, padding: 22, position: "relative", overflow: "hidden" }}>
-                    {p.status === "Active" && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: C.green }} />}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                      <div style={{ fontWeight: 700, fontSize: 15, flex: 1, marginRight: 10 }}>{p.name}</div>
-                      <Badge label={p.status} color={p.status === "Active" ? C.green : C.subtle} />
-                    </div>
-                    {p.description && <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>{p.description}</div>}
-
-                    {/* Progress bar */}
-                    {assigned.length > 0 && (
-                      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, marginBottom: 8 }}>
-                          <span style={{ fontWeight: 600 }}>Lead Progress</span>
-                          <span style={{ color: C.text, fontWeight: 700 }}>{contacted.length}/{assigned.length}</span>
-                        </div>
-                        <div style={{ background: "#27272a", borderRadius: 999, height: 7, overflow: "hidden" }}>
-                          <div style={{ width: `${progress}%`, height: "100%", background: C.brand, borderRadius: 999 }} />
-                        </div>
-                        <div style={{ fontSize: 10, color: C.muted, marginTop: 6, textAlign: "right", fontWeight: 700 }}>{progress}% CONTACTED</div>
-                      </div>
-                    )}
-
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16, borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
-                      {[["CALLS", pitched, C.yellow], ["CONVERTED", converted, C.green], ["WIN RATE", rate + "%", C.purple]].map(([l, v, color]) => (
-                        <div key={l} style={{ textAlign: "center" }}>
-                          <div style={{ color, fontWeight: 800, fontSize: 22, lineHeight: 1 }}>{v}</div>
-                          <div style={{ color: C.muted, fontSize: 10, letterSpacing: 0.5, fontWeight: 600, marginTop: 4 }}>{l}</div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => openEditPromo(p)} style={{ flex: 1, background: "#27272a", border: "none", color: C.text, borderRadius: 6, padding: "7px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Edit</button>
-                      <button onClick={() => deletePromo(p.id, p.name)} style={{ flex: 1, background: C.red + "18", border: `1px solid ${C.red}33`, color: C.red, borderRadius: 6, padding: "7px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
-                    </div>
+            {!viewPromoDetails ? (
+              // Level 1: Campaign Grid
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>Campaign Management</div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <Btn onClick={() => setImportModal(true)} color="#052e16" textColor={C.green} style={{ border: `1px solid ${C.green}44` }}>📥 Import Leads</Btn>
+                    <Btn onClick={() => { setSelectedPromo(null); setPromoForm({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" }); setPromoModal("add"); }}>+ New Campaign</Btn>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 20 }}>
+                  {promos.map(p => {
+                    const pitched = calls.filter(c => c.promo_name === p.name).length;
+                    const converted = calls.filter(c => c.promo_name === p.name && c.outcome === "Converted").length;
+                    const assigned = contacts.filter(c => c.assigned_promo === p.name);
+                    const contacted = assigned.filter(c => c.lead_status === "Contacted");
+                    const progress = assigned.length ? Math.round((contacted.length / assigned.length) * 100) : 0;
+                    
+                    return (
+                      <div key={p.id} style={{ background: C.card, border: `1px solid ${p.status === "Active" ? C.green + "44" : C.border}`, borderRadius: 12, padding: 22, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                        {p.status === "Active" && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: C.green }} />}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                          <div style={{ fontWeight: 700, fontSize: 16, flex: 1, marginRight: 10 }}>{p.name}</div>
+                          <Badge label={p.status} color={p.status === "Active" ? C.green : C.subtle} />
+                        </div>
+                        {p.description && <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>{p.description}</div>}
+
+                        {/* Progress bar */}
+                        {assigned.length > 0 && (
+                          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                              <span style={{ fontWeight: 600 }}>Lead Progress</span>
+                              <span style={{ color: C.text, fontWeight: 700 }}>{contacted.length}/{assigned.length}</span>
+                            </div>
+                            <div style={{ background: "#27272a", borderRadius: 999, height: 7, overflow: "hidden" }}>
+                              <div style={{ width: `${progress}%`, height: "100%", background: C.brand, borderRadius: 999 }} />
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", justifyContent: "space-between", borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: "auto" }}>
+                           <div>
+                             <div style={{ color: C.muted, fontSize: 10, fontWeight: 600 }}>PITCHED</div>
+                             <div style={{ color: C.text, fontWeight: 800, fontSize: 18 }}>{pitched}</div>
+                           </div>
+                           <div>
+                             <div style={{ color: C.muted, fontSize: 10, fontWeight: 600 }}>CONVERTED</div>
+                             <div style={{ color: C.green, fontWeight: 800, fontSize: 18 }}>{converted}</div>
+                           </div>
+                        </div>
+
+                        <button onClick={() => setViewPromoDetails(p)} style={{ width: "100%", marginTop: 16, background: "#27272a", border: "none", color: C.text, borderRadius: 6, padding: "10px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                          Manage Campaign ➔
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : !viewPromoAgent ? (
+              // Level 2: Campaign Details (Agents List)
+              <div>
+                <button onClick={() => setViewPromoDetails(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Campaigns</button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+                  <div>
+                    <div style={{ fontSize: 26, fontWeight: 800 }}>{viewPromoDetails.name}</div>
+                    <div style={{ color: C.muted, fontSize: 14, marginTop: 4 }}>{viewPromoDetails.description || "No description provided."}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn onClick={() => { setImportPromo(viewPromoDetails.name); setImportModal(true); }} color="#052e16" textColor={C.green} style={{ border: `1px solid ${C.green}44` }}>📥 Assign Leads</Btn>
+                    <Btn onClick={() => openEditPromo(viewPromoDetails)} color="#27272a" textColor={C.text}>Edit Info</Btn>
+                    <Btn onClick={() => { deletePromo(viewPromoDetails.id, viewPromoDetails.name); setViewPromoDetails(null); }} color={C.red + "22"} textColor={C.red} style={{ border: `1px solid ${C.red}44` }}>Delete</Btn>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Agent Distribution</div>
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>{["Agent Name", "Total Assigned", "Contacted", "Pending Queue", "Action"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {agents.filter(a => a.role !== "admin").map(agent => {
+                          const promoLeads = contacts.filter(c => c.assigned_promo === viewPromoDetails.name && c.assigned_agent === agent.name);
+                          if (promoLeads.length === 0) return null; // Only show agents with leads in this campaign
+
+                          const contacted = promoLeads.filter(c => c.lead_status === "Contacted").length;
+                          const pending = promoLeads.filter(c => c.lead_status === "Pending").length;
+
+                          return (
+                            <tr key={agent.id} onMouseOver={e => e.currentTarget.style.background = "#1c1c1f"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                              <td style={S.td}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <Avatar name={agent.name} />
+                                  <span style={{ fontWeight: 600 }}>{agent.name}</span>
+                                </div>
+                              </td>
+                              <td style={{ ...S.td, fontWeight: 600 }}>{promoLeads.length}</td>
+                              <td style={{ ...S.td, color: C.green, fontWeight: 600 }}>{contacted}</td>
+                              <td style={{ ...S.td, color: C.yellow, fontWeight: 600 }}>{pending}</td>
+                              <td style={S.td}>
+                                <button onClick={() => setViewPromoAgent(agent.name)} style={{ background: C.brand + "22", border: `1px solid ${C.brand}33`, color: C.brand, borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                                  Inspect & Clean Queue
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Level 3: Deep Drill-Down (Agent's leads for a specific campaign)
+              <div>
+                <button onClick={() => { setViewPromoAgent(null); setSelectedLeads([]); }} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to {viewPromoDetails.name} Distribution</button>
+                
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
+                  <div>
+                    <div style={{ fontSize: 24, fontWeight: 800 }}>{viewPromoAgent}'s Queue</div>
+                    <div style={{ color: C.brand, fontSize: 14, fontWeight: 600, marginTop: 4 }}>Campaign: {viewPromoDetails.name}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    {selectedLeads.length > 0 && (
+                       <Btn onClick={handleWipeSelected} color={C.red + "22"} textColor={C.red} style={{ border: `1px solid ${C.red}55` }}>
+                         🗑 Delete Selected ({selectedLeads.length})
+                       </Btn>
+                    )}
+                    <Btn onClick={handleWipeAllPending} color={C.red} textColor={C.text}>
+                      ⚠️ Wipe ALL Pending
+                    </Btn>
+                  </div>
+                </div>
+
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr>
+                          <th style={{ ...S.th, width: 40 }}></th>
+                          {["Lead Name", "Phone", "Customer Type", "Priority", "Status"].map(h => <th key={h} style={S.th}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contacts.filter(c => c.assigned_promo === viewPromoDetails.name && c.assigned_agent === viewPromoAgent).map(lead => {
+                          const isSelected = selectedLeads.includes(lead.id);
+                          return (
+                            <tr key={lead.id} style={{ background: isSelected ? "#27272a88" : "transparent" }}>
+                              <td style={{ ...S.td, textAlign: "center" }}>
+                                {lead.lead_status === "Pending" ? (
+                                  <input type="checkbox" checked={isSelected} style={{ width: 16, height: 16, cursor: "pointer" }}
+                                    onChange={(e) => {
+                                      if (e.target.checked) setSelectedLeads([...selectedLeads, lead.id]);
+                                      else setSelectedLeads(selectedLeads.filter(id => id !== lead.id));
+                                    }} 
+                                  />
+                                ) : (
+                                  <span style={{ color: C.green }}>✓</span>
+                                )}
+                              </td>
+                              <td style={{ ...S.td, fontWeight: 600 }}>{lead.name}</td>
+                              <td style={{ ...S.td, color: C.muted }}>{lead.phone || "—"}</td>
+                              <td style={{ ...S.td, color: C.muted }}>{lead.customer_type || "—"}</td>
+                              <td style={{ ...S.td, color: C.muted }}>{lead.priority || "—"}</td>
+                              <td style={S.td}>
+                                <Badge label={lead.lead_status} color={lead.lead_status === "Contacted" ? C.green : C.yellow} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1163,60 +1303,6 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
 
       {/* ── MODALS ── */}
 
-      {/* Promo Modal */}
-      {promoModal && (
-        <Modal title={promoModal === "edit" ? "Edit Campaign" : "New Campaign"} onClose={() => { setPromoModal(null); setSelectedPromo(null); }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <div><label style={S.lbl}>Campaign Name *</label><input value={promoForm.name} onChange={e => setPromoForm({ ...promoForm, name: e.target.value })} style={S.inp} /></div>
-            <div><label style={S.lbl}>Description</label><input value={promoForm.description} onChange={e => setPromoForm({ ...promoForm, description: e.target.value })} style={S.inp} /></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div><label style={S.lbl}>Start Date</label><input type="date" value={promoForm.start_date} onChange={e => setPromoForm({ ...promoForm, start_date: e.target.value })} style={S.inp} /></div>
-              <div><label style={S.lbl}>End Date</label><input type="date" value={promoForm.end_date} onChange={e => setPromoForm({ ...promoForm, end_date: e.target.value })} style={S.inp} /></div>
-              <div>
-                <label style={S.lbl}>Status</label>
-                <select value={promoForm.status} onChange={e => setPromoForm({ ...promoForm, status: e.target.value })} style={S.inp}>
-                  <option>Active</option><option>Expired</option><option>Paused</option>
-                </select>
-              </div>
-              <div><label style={S.lbl}>Target Audience</label><input value={promoForm.target_audience} onChange={e => setPromoForm({ ...promoForm, target_audience: e.target.value })} style={S.inp} /></div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
-            <Btn onClick={savePromo} disabled={!promoForm.name} style={{ flex: 1, padding: 12 }}>Save Campaign</Btn>
-            <Btn onClick={() => { setPromoModal(null); setSelectedPromo(null); }} color="transparent" textColor={C.text} style={{ flex: 1, padding: 12, border: `1px solid ${C.border}` }}>Cancel</Btn>
-          </div>
-        </Modal>
-      )}
-
-      {/* Agent Modal */}
-      {agentModal && (
-        <Modal title={agentModal === "edit" ? "Edit Agent" : "Add New Agent"} onClose={() => { setAgentModal(null); setSelectedAgentModal(null); }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-            <div><label style={S.lbl}>Full Name *</label><input value={agentForm.name} onChange={e => setAgentForm({ ...agentForm, name: e.target.value })} style={S.inp} /></div>
-            <div>
-              <label style={S.lbl}>Role</label>
-              <select value={agentForm.role} onChange={e => setAgentForm({ ...agentForm, role: e.target.value })} style={S.inp}>
-                <option>Agent</option><option>Senior Agent</option><option>Junior Agent</option><option>Team Lead</option>
-              </select>
-            </div>
-            <div><label style={S.lbl}>Login PIN * (numbers only)</label><input type="password" maxLength={6} value={agentForm.pin} onChange={e => setAgentForm({ ...agentForm, pin: e.target.value })} style={S.inp} placeholder="e.g. 1234" /></div>
-            <div><label style={S.lbl}>Phone Extension</label><input value={agentForm.phone_ext} onChange={e => setAgentForm({ ...agentForm, phone_ext: e.target.value })} style={S.inp} /></div>
-            <div>
-              <label style={S.lbl}>Status</label>
-              <select value={agentForm.status} onChange={e => setAgentForm({ ...agentForm, status: e.target.value })} style={S.inp}>
-                <option>Active</option><option>On Leave</option><option>Inactive</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
-            <Btn onClick={saveAgent} disabled={!agentForm.name || !agentForm.pin} style={{ flex: 1, padding: 12 }}>
-              {agentModal === "edit" ? "Save Changes" : "Add Agent"}
-            </Btn>
-            <Btn onClick={() => { setAgentModal(null); setSelectedAgentModal(null); }} color="transparent" textColor={C.text} style={{ flex: 1, padding: 12, border: `1px solid ${C.border}` }}>Cancel</Btn>
-          </div>
-        </Modal>
-      )}
-
       {/* Import Leads Modal */}
       {importModal && (
         <Modal title="📥 Import & Assign Leads" onClose={() => { setImportModal(false); setParsedCsv([]); }}>
@@ -1294,7 +1380,6 @@ export default function App() {
 
   useEffect(() => { loadAll(false); }, []);
 
-  // Auto-refresh every 30 seconds when logged in
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => loadAll(true), 30000);
