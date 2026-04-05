@@ -581,7 +581,6 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
       </div>
 
       <div style={{ padding: "32px 36px", maxWidth: 1280, margin: "0 auto" }}>
-
         {/* QUEUE */}
         {tab === "queue" && (
           <div>
@@ -698,7 +697,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
 }
 
 // ════════════════════════════════════════════════════════════
-// ADMIN PAGE
+// ADMIN PAGE (SUPERVISOR COMMAND CENTER)
 // ════════════════════════════════════════════════════════════
 function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showToast }) {
   const [tab, setTab] = useState("dashboard");
@@ -709,14 +708,13 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
   const [selectedPromo, setSelectedPromo] = useState(null);
   const [promoForm, setPromoForm] = useState({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" });
   
-  // Drill-down states
   const [viewPromoDetails, setViewPromoDetails] = useState(null); // stores promo object
   const [viewPromoAgent, setViewPromoAgent] = useState(null); // stores agent string name
   const [selectedLeads, setSelectedLeads] = useState([]); // array of contact IDs for bulk action
 
   // Agent management
   const [agentModal, setAgentModal] = useState(null); // null | "add" | "edit"
-  const [selectedAgent, setSelectedAgentModal] = useState(null);
+  const [selectedAgentModal, setSelectedAgentModal] = useState(null);
   const [agentForm, setAgentForm] = useState({ name: "", role: "Agent", phone_ext: "", pin: "", status: "Active" });
 
   // Call log filters
@@ -765,7 +763,6 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
     { key: "contacts", label: "Directory" },
   ];
 
-  // Reset drill-downs on tab change
   function handleTabChange(k) {
     setTab(k);
     setViewAgent(null);
@@ -796,14 +793,13 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
     setPromoModal("edit");
   }
 
-  // ── Bulk Delete Logic ──
+  // ── Bulk Wipe Logic ──
   async function handleWipeSelected() {
     if (!window.confirm(`Are you sure you want to permanently delete ${selectedLeads.length} leads?`)) return;
     try {
       await Promise.all(selectedLeads.map(id => db.delete("contacts", id)));
       showToast(`${selectedLeads.length} leads removed.`);
-      setSelectedLeads([]);
-      onRefresh();
+      setSelectedLeads([]); onRefresh();
     } catch { showToast("Error deleting leads.", "error"); }
   }
 
@@ -813,8 +809,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
     try {
       await Promise.all(pendingList.map(c => db.delete("contacts", c.id)));
       showToast(`All pending leads for ${viewPromoAgent} wiped.`);
-      setSelectedLeads([]);
-      onRefresh();
+      setSelectedLeads([]); onRefresh();
     } catch { showToast("Error deleting leads.", "error"); }
   }
 
@@ -822,7 +817,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
   async function saveAgent() {
     if (!agentForm.name || !agentForm.pin) return;
     try {
-      if (selectedAgent) { await db.update("agents", selectedAgent.id, agentForm); showToast("Agent updated ✓"); }
+      if (selectedAgentModal) { await db.update("agents", selectedAgentModal.id, agentForm); showToast("Agent updated ✓"); }
       else { await db.insert("agents", agentForm); showToast("Agent added ✓"); }
       setAgentModal(null); setSelectedAgentModal(null); onRefresh();
     } catch { showToast("Error saving agent.", "error"); }
@@ -874,7 +869,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
   }
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter', system-ui, sans-serif", paddingBottom: 60 }}>
       {/* NAV */}
       <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 28 }}>
@@ -1302,6 +1297,60 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
       </div>
 
       {/* ── MODALS ── */}
+
+      {/* Promo Modal */}
+      {promoModal && (
+        <Modal title={promoModal === "edit" ? "Edit Campaign" : "New Campaign"} onClose={() => { setPromoModal(null); setSelectedPromo(null); }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div><label style={S.lbl}>Campaign Name *</label><input value={promoForm.name} onChange={e => setPromoForm({ ...promoForm, name: e.target.value })} style={S.inp} /></div>
+            <div><label style={S.lbl}>Description</label><input value={promoForm.description} onChange={e => setPromoForm({ ...promoForm, description: e.target.value })} style={S.inp} /></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div><label style={S.lbl}>Start Date</label><input type="date" value={promoForm.start_date} onChange={e => setPromoForm({ ...promoForm, start_date: e.target.value })} style={S.inp} /></div>
+              <div><label style={S.lbl}>End Date</label><input type="date" value={promoForm.end_date} onChange={e => setPromoForm({ ...promoForm, end_date: e.target.value })} style={S.inp} /></div>
+              <div>
+                <label style={S.lbl}>Status</label>
+                <select value={promoForm.status} onChange={e => setPromoForm({ ...promoForm, status: e.target.value })} style={S.inp}>
+                  <option>Active</option><option>Expired</option><option>Paused</option>
+                </select>
+              </div>
+              <div><label style={S.lbl}>Target Audience</label><input value={promoForm.target_audience} onChange={e => setPromoForm({ ...promoForm, target_audience: e.target.value })} style={S.inp} /></div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+            <Btn onClick={savePromo} disabled={!promoForm.name} style={{ flex: 1, padding: 12 }}>Save Campaign</Btn>
+            <Btn onClick={() => { setPromoModal(null); setSelectedPromo(null); }} color="transparent" textColor={C.text} style={{ flex: 1, padding: 12, border: `1px solid ${C.border}` }}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Agent Modal */}
+      {agentModal && (
+        <Modal title={agentModal === "edit" ? "Edit Agent" : "Add New Agent"} onClose={() => { setAgentModal(null); setSelectedAgentModal(null); }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+            <div><label style={S.lbl}>Full Name *</label><input value={agentForm.name} onChange={e => setAgentForm({ ...agentForm, name: e.target.value })} style={S.inp} /></div>
+            <div>
+              <label style={S.lbl}>Role</label>
+              <select value={agentForm.role} onChange={e => setAgentForm({ ...agentForm, role: e.target.value })} style={S.inp}>
+                <option>Agent</option><option>Senior Agent</option><option>Junior Agent</option><option>Team Lead</option>
+              </select>
+            </div>
+            <div><label style={S.lbl}>Login PIN * (numbers only)</label><input type="password" maxLength={6} value={agentForm.pin} onChange={e => setAgentForm({ ...agentForm, pin: e.target.value })} style={S.inp} placeholder="e.g. 1234" /></div>
+            <div><label style={S.lbl}>Phone Extension</label><input value={agentForm.phone_ext} onChange={e => setAgentForm({ ...agentForm, phone_ext: e.target.value })} style={S.inp} /></div>
+            <div>
+              <label style={S.lbl}>Status</label>
+              <select value={agentForm.status} onChange={e => setAgentForm({ ...agentForm, status: e.target.value })} style={S.inp}>
+                <option>Active</option><option>On Leave</option><option>Inactive</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+            <Btn onClick={saveAgent} disabled={!agentForm.name || !agentForm.pin} style={{ flex: 1, padding: 12 }}>
+              {agentModal === "edit" ? "Save Changes" : "Add Agent"}
+            </Btn>
+            <Btn onClick={() => { setAgentModal(null); setSelectedAgentModal(null); }} color="transparent" textColor={C.text} style={{ flex: 1, padding: 12, border: `1px solid ${C.border}` }}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
 
       {/* Import Leads Modal */}
       {importModal && (
