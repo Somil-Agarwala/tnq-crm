@@ -10,7 +10,7 @@ const db = {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=${order}.desc`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
-    if (!res.ok) throw new Error(`Fetch failed: ${res.statusText}`);
+    if (!res.ok) throw new Error(`Fetch failed`);
     return res.json();
   },
   async insert(table, data) {
@@ -19,7 +19,7 @@ const db = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw new Error(`Insert failed: ${res.statusText}`);
+    if (!res.ok) throw new Error(`Insert failed`);
     return res.json();
   },
   async update(table, id, data) {
@@ -28,7 +28,7 @@ const db = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw new Error(`Update failed: ${res.statusText}`);
+    if (!res.ok) throw new Error(`Update failed`);
     return res.json();
   },
   async delete(table, id) {
@@ -36,14 +36,14 @@ const db = {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
-    if (!res.ok) throw new Error(`Delete failed: ${res.statusText}`);
+    if (!res.ok) throw new Error(`Delete failed`);
   },
   async deleteWhere(table, column, value) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${column}=eq.${encodeURIComponent(value)}`, {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
-    if (!res.ok) throw new Error(`DeleteWhere failed: ${res.statusText}`);
+    if (!res.ok) throw new Error(`DeleteWhere failed`);
   }
 };
 
@@ -250,90 +250,6 @@ function LogCallModal({ contacts, promos, agents, defaultAgent, prefilledLead, o
 }
 
 // ════════════════════════════════════════════════════════════
-// CONTACTS TAB (SHARED)
-// ════════════════════════════════════════════════════════════
-function ContactsTab({ contacts, calls, agents, promos, onRefresh, showToast, isAdmin = false }) {
-  const [search, setSearch] = useState("");
-  const [modal, setModal] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
-
-  const filtered = useMemo(() => contacts.filter(c => (c.name || "").toLowerCase().includes(search.toLowerCase()) || (c.phone || "").includes(search)), [contacts, search]);
-
-  function openAdd() { setSelected(null); setForm({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" }); setModal("contact"); }
-  function openEdit(c) { setSelected(c); setForm({ name: c.name, phone: c.phone || "", customer_type: c.customer_type || "", priority: c.priority || "", category: c.category || "Business", dnc: c.dnc || false, notes: c.notes || "", assigned_agent: c.assigned_agent || "", assigned_promo: c.assigned_promo || "", lead_status: c.lead_status || "Pending" }); setModal("contact"); }
-
-  async function save() {
-    if (!form.name) return;
-    try {
-      if (selected) { await db.update("contacts", selected.id, form); showToast("Updated ✓"); }
-      else { await db.insert("contacts", form); showToast("Added ✓"); }
-      setModal(null); onRefresh();
-    } catch { showToast("Error saving.", "error"); }
-  }
-
-  async function remove(id, name) {
-    if (!window.confirm(`Delete "${name}"?`)) return;
-    try { await db.delete("contacts", id); showToast("Deleted.", "error"); onRefresh(); } catch { showToast("Error deleting.", "error"); }
-  }
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ ...S.inp, maxWidth: 300 }} />
-        <div style={{ display: "flex", gap: 10 }}>
-          {isAdmin && <Btn onClick={() => exportToCSV(contacts, "contacts.csv")} color="#27272a" textColor={C.text}>Export</Btn>}
-          <Btn onClick={openAdd}>+ Add Contact</Btn>
-        </div>
-      </div>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>{["Contact", "Phone", "Cust Type", "Priority", "Status", isAdmin ? "Assigned Agent" : "Notes", "Actions"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-            <tbody>
-              {filtered.map(c => (
-                <tr key={c.id}>
-                  <td style={S.td}><div style={{ display: "flex", gap: 10, alignItems: "center" }}><Avatar name={c.name} /> <span style={{ fontWeight: 600 }}>{c.name}</span></div></td>
-                  <td style={S.td}>{c.phone || "—"}</td><td style={S.td}>{c.customer_type || "—"}</td><td style={S.td}>{c.priority || "—"}</td>
-                  <td style={S.td}>{c.dnc ? <Badge label="DNC" color={C.red} /> : <Badge label="Active" color={C.green} />}</td>
-                  <td style={S.td}>{isAdmin ? (c.assigned_agent || "—") : (c.notes || "—")}</td>
-                  <td style={S.td}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => openEdit(c)} style={{ background: "#27272a", border: "none", color: C.text, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Edit</button>
-                      <button onClick={() => remove(c.id, c.name)} style={{ background: C.red + "18", border: "none", color: C.red, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Del</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {modal === "contact" && (
-        <Modal title={selected ? "Edit Contact" : "Add Contact"} onClose={() => setModal(null)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-            {[["Full Name *", "name"], ["Phone", "phone"], ["Cust Type", "customer_type"], ["Priority", "priority"]].map(([lbl, k]) => (
-              <div key={k}><label style={S.lbl}>{lbl}</label><input value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} style={S.inp} /></div>
-            ))}
-            {isAdmin && <>
-              <div><label style={S.lbl}>Assigned Agent</label><select value={form.assigned_agent} onChange={e => setForm({ ...form, assigned_agent: e.target.value })} style={S.inp}><option value="">None</option>{agents.map(a => <option key={a.id}>{a.name}</option>)}</select></div>
-              <div><label style={S.lbl}>Assigned Campaign</label><select value={form.assigned_promo} onChange={e => setForm({ ...form, assigned_promo: e.target.value })} style={S.inp}><option value="">None</option>{promos.map(p => <option key={p.id}>{p.name}</option>)}</select></div>
-            </>}
-            <div style={{ gridColumn: "span 2" }}><label style={S.lbl}>Notes</label><input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={S.inp} /></div>
-            <div style={{ gridColumn: "span 2", display: "flex", alignItems: "center", gap: 10 }}>
-              <input type="checkbox" id="dnc_m" checked={form.dnc} onChange={e => setForm({ ...form, dnc: e.target.checked })} style={{ width: 16, height: 16 }} />
-              <label htmlFor="dnc_m" style={{ color: C.red, fontWeight: 600 }}>Mark as Do Not Call (DNC)</label>
-            </div>
-          </div>
-          <Btn onClick={save} disabled={!form.name} style={{ width: "100%", marginTop: 20 }}>Save</Btn>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
 // CALLBACKS TAB (SHARED)
 // ════════════════════════════════════════════════════════════
 function CallbacksTab({ calls, onRefresh, showToast }) {
@@ -363,6 +279,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   const [logModalLead, setLogModalLead] = useState(null);
   const [showLogCall, setShowLogCall] = useState(false);
   
+  // States for Queue Filtering and Sorting
   const [queueFilter, setQueueFilter] = useState("All");
   const [queueSort, setQueueSort] = useState("Default");
 
@@ -390,7 +307,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
     { key: "queue", label: `Queue (${baseLeads.length})` },
     { key: "stats", label: "Stats" },
     { key: "callbacks", label: `Callbacks (${myPending.length})` },
-    { key: "contacts", label: "Directory" }
+    { key: "allcalls", label: "Team Activity" }
   ];
 
   const outcomeCounts = Object.keys(outcomeColor).map(o => ({ name: o, count: myCalls.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
@@ -434,7 +351,32 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
 
         {tab === "stats" && <div><div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Stats</div><div style={{ display: "flex", gap: 16 }}><StatCard label="Total Calls" value={myCalls.length} /><StatCard label="Conversions" value={myConversions} accent={C.green} /><StatCard label="Win Rate" value={myRate + "%"} accent={C.purple} /></div></div>}
         {tab === "callbacks" && <CallbacksTab calls={myCalls} onRefresh={onRefresh} showToast={showToast} />}
-        {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} showToast={showToast} />}
+        
+        {tab === "allcalls" && (
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Team Activity Feed</div>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr>{["Contact", "Date", "Agent", "Campaign", "Outcome", "Notes"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {calls.length === 0 && <tr><td colSpan={6} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No activity yet.</td></tr>}
+                    {calls.slice(0, 50).map(c => (
+                      <tr key={c.id} onMouseOver={e => e.currentTarget.style.background = "#1c1c1f"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
+                        <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
+                        <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
+                        <td style={S.td}><Badge label={c.agent_name} color={c.agent_name === user.name ? C.brand : C.subtle} /></td>
+                        <td style={S.td}>{c.promo_name}</td>
+                        <td style={S.td}><Badge label={c.outcome} color={outcomeColor[c.outcome] || C.muted} /></td>
+                        <td style={{ ...S.td, color: C.muted, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {showLogCall && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} onClose={() => setShowLogCall(false)} onSaved={onRefresh} showToast={showToast} />}
@@ -447,21 +389,25 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
 // ADMIN PAGE (SUPERVISOR COMMAND CENTER)
 // ════════════════════════════════════════════════════════════
 function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showToast }) {
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState("campaigns");
   const [showLogCall, setShowLogCall] = useState(false);
 
+  // Promo Management
   const [promoModal, setPromoModal] = useState(null);
   const [selectedPromo, setSelectedPromo] = useState(null);
   const [promoForm, setPromoForm] = useState({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" });
   
+  // Drill Down
   const [viewPromoDetails, setViewPromoDetails] = useState(null);
   const [viewPromoAgent, setViewPromoAgent] = useState(null);
   const [selectedLeads, setSelectedLeads] = useState([]);
 
+  // Agent Management
   const [agentModal, setAgentModal] = useState(null);
   const [selectedAgentModal, setSelectedAgentModal] = useState(null);
   const [agentForm, setAgentForm] = useState({ name: "", role: "Agent", phone_ext: "", pin: "", status: "Active" });
 
+  // CSV Import
   const [importModal, setImportModal] = useState(false);
   const [importAgent, setImportAgent] = useState("");
   const [importPromo, setImportPromo] = useState("");
@@ -477,7 +423,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
 
   const [viewAgent, setViewAgent] = useState(null);
 
-  const TABS = [{ key: "dashboard", label: "Dashboard" }, { key: "campaigns", label: "Campaigns" }, { key: "agents", label: "Team" }, { key: "calls", label: "Call Logs" }, { key: "contacts", label: "Directory" }];
+  const TABS = [{ key: "dashboard", label: "Dashboard" }, { key: "campaigns", label: "Campaigns" }, { key: "agents", label: "Team" }, { key: "calls", label: "Call Logs" }];
 
   function handleTabChange(k) { setTab(k); setViewPromoDetails(null); setViewPromoAgent(null); setSelectedLeads([]); setViewAgent(null); }
 
@@ -490,6 +436,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
     } catch { showToast("Error", "error"); }
   }
 
+  // CASCADING DELETE
   async function deletePromoCascade(id, name) {
     if (!window.confirm(`⚠️ CRITICAL WARNING:\n\nDeleting "${name}" will PERMANENTLY WIPE all leads, call logs, and agent statistics tied to this campaign.\n\nTo keep stats, change status to "Expired" instead.\n\nAre you sure you want to completely erase it?`)) return;
     try {
@@ -498,6 +445,30 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
       await db.delete("promotions", id); 
       showToast("Campaign entirely erased.", "error"); setViewPromoDetails(null); onRefresh();
     } catch { showToast("Error deleting campaign.", "error"); }
+  }
+
+  // UNDO LAST HOUR UPLOAD
+  async function undoLastHourUpload() {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentLeads = contacts.filter(c => 
+      c.assigned_promo === viewPromoDetails.name && 
+      new Date(c.created_at) > oneHourAgo
+    );
+
+    if (recentLeads.length === 0) {
+      showToast("No leads were added to this campaign in the last 60 minutes.", "error");
+      return;
+    }
+
+    if (!window.confirm(`⚠️ UNDO UPLOAD: This will permanently delete ${recentLeads.length} leads assigned to ${viewPromoDetails.name} in the last hour. Proceed?`)) return;
+
+    try {
+      await Promise.all(recentLeads.map(c => db.delete("contacts", c.id)));
+      showToast(`Successfully removed ${recentLeads.length} recent leads.`);
+      onRefresh();
+    } catch (err) {
+      showToast("Error removing leads.", "error");
+    }
   }
 
   async function saveAgent() {
@@ -607,7 +578,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
               </div>
             </div>
 
-            {/* NEW: Global Campaign Performance Table */}
+            {/* Global Campaign Performance Table */}
             <div style={{ fontWeight: 700, fontSize: 16, marginTop: 24, marginBottom: 14 }}>Campaign Performance</div>
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -644,8 +615,6 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
           </div>
         )}
 
-        {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} showToast={showToast} isAdmin={true} />}
-
         {/* ── CAMPAIGNS (DRILL-DOWN) ── */}
         {tab === "campaigns" && (
           <div>
@@ -676,7 +645,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
                 </div>
               </div>
             ) : !viewPromoAgent ? (
-              // Level 2: Campaign Details (Leaderboard Style)
+              // Level 2: Campaign Details (Leaderboard Style + Undo Last Hour)
               <div>
                 <button onClick={() => setViewPromoDetails(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "6px 12px", marginBottom: 20, cursor: "pointer" }}>← Back</button>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
@@ -685,6 +654,8 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
                     <div style={{ color: C.muted, fontSize: 14 }}>{viewPromoDetails.description || "No description provided."}</div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
+                    <Btn onClick={undoLastHourUpload} color={C.yellow + "22"} textColor={C.yellow} style={{ border: `1px solid ${C.yellow}44` }}>↩ Undo Last Hour Upload</Btn>
+                    <Btn onClick={() => { setImportPromo(viewPromoDetails.name); setImportModal(true); }} color="#052e16" textColor={C.green} style={{ border: `1px solid ${C.green}44` }}>📥 Assign Leads</Btn>
                     <Btn onClick={() => { setSelectedPromo(viewPromoDetails); setPromoForm(viewPromoDetails); setPromoModal("edit"); }} color="#27272a" textColor={C.text}>Edit</Btn>
                     <Btn onClick={() => deletePromoCascade(viewPromoDetails.id, viewPromoDetails.name)} color={C.red + "22"} textColor={C.red}>Delete</Btn>
                   </div>
@@ -788,7 +759,6 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showT
                   <StatCard label="Assigned Leads" value={contacts.filter(c => c.assigned_agent === viewAgent.name && c.lead_status !== "Contacted").length} accent={C.purple} />
                 </div>
 
-                {/* NEW: Campaign Breakdown for Agent */}
                 <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>Campaign Breakdown</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, marginBottom: 28 }}>
                   {promos.map(p => {
