@@ -1,13 +1,17 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 
+// ── SUPABASE ─────────────────────────────────────────────────
 const SUPABASE_URL = "https://btqcxzjrdpiyyqcyrimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0cWN4empyZHBpeXlxY3lyaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyODQ2MDIsImV4cCI6MjA4Nzg2MDYwMn0.PGy-UjyjT0pczlmac9QivO-j_MUt4hbZqkClypY1868";
 const ADMIN_PIN = "0000";
 
 const db = {
   async get(table, order = "created_at") {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=${order}.desc`, {
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
+    // FIX: Added timestamp and cache: "no-store" to force browser to ignore cache on manual refresh
+    const timestamp = new Date().getTime();
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=${order}.desc&t=${timestamp}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      cache: "no-store"
     });
     if (!res.ok) throw new Error(res.statusText);
     return res.json();
@@ -408,7 +412,6 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
   );
 
   const tog = id => setSel(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const togAll = () => setSel(sel.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(l => l.id)));
 
   async function delSel() {
     if (!window.confirm(`Delete ${sel.size} leads?`)) return;
@@ -421,6 +424,28 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
     if (!window.confirm(`Delete "${name}"?`)) return;
     try { await db.remove("contacts", id); toast("Lead deleted."); onRefresh(); }
     catch { toast("Error.", "error"); }
+  }
+
+  // FIX: Undo Last Hour logic added here
+  async function undoLastHourUpload() {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    // Find leads for this campaign added in last hour (using assigned_at if available, else created_at)
+    const recentLeads = cc.filter(c => new Date(c.assigned_at || c.created_at) > oneHourAgo);
+
+    if (recentLeads.length === 0) {
+      toast("No leads were added to this campaign in the last 60 minutes.", "error");
+      return;
+    }
+
+    if (!window.confirm(`⚠️ UNDO UPLOAD: This will permanently delete ${recentLeads.length} leads assigned to ${campaign.name} in the last hour. Proceed?`)) return;
+
+    try {
+      await db.removeMany("contacts", recentLeads.map(c => c.id));
+      toast(`Successfully removed ${recentLeads.length} recent leads.`);
+      onRefresh();
+    } catch (err) {
+      toast("Error removing leads.", "error");
+    }
   }
 
   // ── AGENT LEAD VIEW ──
@@ -503,7 +528,9 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
 
   return (
     <div>
-      <button onClick={onBack} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Campaigns</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <button onClick={onBack} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Campaigns</button>
+      </div>
 
       <div style={{ marginBottom: 28 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
@@ -511,6 +538,13 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
           <Badge label={campaign.status} color={campaign.status === "Active" ? C.green : C.subtle} />
         </div>
         {campaign.description && <div style={{ color: C.muted }}>{campaign.description}</div>}
+        
+        {/* FIX: Undo Last Hour Upload button injected here */}
+        <div style={{ marginTop: 12 }}>
+          <Btn onClick={undoLastHourUpload} color={C.yellow + "22"} textColor={C.yellow} outline style={{ border: `1px solid ${C.yellow}44` }}>
+            ↩ Undo Last Hour Upload
+          </Btn>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 32 }}>
@@ -571,173 +605,6 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
       })}
 
       {clearTarget && <ClearModal {...clearTarget} onClose={() => setClearTarget(null)} onDone={onRefresh} toast={toast} />}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
-// CONTACTS TAB
-// ═══════════════════════════════════════════════════════════
-function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmin }) {
-  const [search, setSearch] = useState("");
-  const [sf, setSf] = useState("");
-  const [modal, setModal] = useState(null);
-  const [sel2, setSel2] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [checked, setChecked] = useState(new Set());
-  const [bulk, setBulk] = useState("");
-  const [ra, setRa] = useState("");
-  const [rp, setRp] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
-
-  const filtered = useMemo(() =>
-    contacts.filter(c => {
-      const ms = (c.name || "").toLowerCase().includes(search.toLowerCase()) ||
-        (c.customer_type || "").toLowerCase().includes(search.toLowerCase()) ||
-        (c.phone || "").includes(search);
-      return ms && (!sf || c.lead_status === sf);
-    }), [contacts, search, sf]);
-
-  const togC = id => setChecked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const togAll = () => setChecked(checked.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(c => c.id)));
-
-  async function bulkDel() {
-    if (!window.confirm(`Delete ${checked.size} contacts?`)) return;
-    try { await db.removeMany("contacts", [...checked]); toast(`Deleted ${checked.size}.`, "error"); setChecked(new Set()); onRefresh(); }
-    catch { toast("Error.", "error"); }
-  }
-
-  async function bulkReassign() {
-    if (!ra && !rp) return;
-    const up = {};
-    if (ra) up.assigned_agent = ra;
-    if (rp) up.assigned_promo = rp;
-    try {
-      await Promise.all([...checked].map(id => db.update("contacts", id, up)));
-      toast(`Reassigned ${checked.size} contacts`); setChecked(new Set()); setBulk(""); onRefresh();
-    } catch { toast("Error.", "error"); }
-  }
-
-  function openAdd() { setSel2(null); setForm({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" }); setModal("c"); }
-  function openEdit(c) { setSel2(c); setForm({ name: c.name, phone: c.phone || "", customer_type: c.customer_type || "", priority: c.priority || "", category: c.category || "Business", dnc: c.dnc || false, notes: c.notes || "", assigned_agent: c.assigned_agent || "", assigned_promo: c.assigned_promo || "", lead_status: c.lead_status || "Pending" }); setModal("c"); }
-
-  async function save() {
-    if (!form.name) return;
-    setSaving(true);
-    try {
-      if (sel2) { await db.update("contacts", sel2.id, form); toast("Updated ✓"); }
-      else { await db.insert("contacts", form); toast("Added ✓"); }
-      setModal(null); onRefresh();
-    } catch { toast("Error.", "error"); } finally { setSaving(false); }
-  }
-
-  async function del(id, name) {
-    if (!window.confirm(`Delete "${name}"?`)) return;
-    try { await db.remove("contacts", id); toast("Deleted.", "error"); onRefresh(); }
-    catch { toast("Error.", "error"); }
-  }
-
-  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 10, flex: 1, flexWrap: "wrap" }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search..." style={{ ...S.inp, maxWidth: 300 }} />
-          <select value={sf} onChange={e => setSf(e.target.value)} style={{ ...S.inp, maxWidth: 160 }}>
-            <option value="">All Statuses</option>
-            <option>Pending</option><option>Contacted</option><option>Converted</option>
-          </select>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          {isAdmin && <Btn color="#27272a" textColor={C.text} onClick={() => exportCSV(contacts.map(c => ({ name: c.name, phone: c.phone, customer_type: c.customer_type, priority: c.priority, dnc: c.dnc, assigned_agent: c.assigned_agent, assigned_promo: c.assigned_promo, lead_status: c.lead_status })), "contacts.csv")}>⬇ Export</Btn>}
-          <Btn onClick={openAdd}>+ Add Contact</Btn>
-        </div>
-      </div>
-
-      {checked.size > 0 && (
-        <div style={{ background: C.brand + "18", border: `1px solid ${C.brand}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-            <span style={{ color: C.brand, fontWeight: 700 }}>{checked.size} selected</span>
-            <div style={{ flex: 1 }} />
-            {bulk === "reassign" ? (
-              <>
-                <select value={ra} onChange={e => setRa(e.target.value)} style={{ ...S.inp, width: 160 }}>
-                  <option value="">Keep Agent</option>
-                  {agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}
-                </select>
-                <select value={rp} onChange={e => setRp(e.target.value)} style={{ ...S.inp, width: 180 }}>
-                  <option value="">Keep Campaign</option>
-                  {promos.map(p => <option key={p.id}>{p.name}</option>)}
-                </select>
-                <Btn onClick={bulkReassign} disabled={!ra && !rp}>Apply</Btn>
-                <Btn onClick={() => setBulk("")} color="#27272a" textColor={C.text}>Cancel</Btn>
-              </>
-            ) : (
-              <>
-                {isAdmin && <Btn onClick={() => setBulk("reassign")} color="#27272a" textColor={C.text}>🔄 Reassign</Btn>}
-                <button onClick={bulkDel} style={{ background: C.red + "22", border: `1px solid ${C.red}44`, color: C.red, borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>🗑️ Delete {checked.size}</button>
-                <Btn onClick={() => setChecked(new Set())} color="#27272a" textColor={C.text}>✕ Clear</Btn>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div style={{ color: C.muted, fontSize: 12, marginBottom: 10 }}>Showing {filtered.length} of {contacts.length}</div>
-
-      <DataTable headers={["", "Contact", "Phone", "Customer Type", "Priority", "Type", "Status", isAdmin ? "Agent" : "Notes", ""]}>
-        {filtered.length === 0 && <tr><td colSpan={9} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 60 }}>No contacts.</td></tr>}
-        {filtered.map(c => {
-          const cc = calls.filter(x => x.contact_name === c.name).length;
-          const isSel = checked.has(c.id);
-          return (
-            <TR key={c.id} selected={isSel}>
-              <td style={{ ...S.td, width: 44 }}><input type="checkbox" checked={isSel} onChange={() => togC(c.id)} style={{ cursor: "pointer" }} /></td>
-              <td style={S.td}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><Av name={c.name} /><div><div style={{ fontWeight: 600, color: c.dnc ? C.muted : C.text }}>{c.name}</div><div style={{ color: C.muted, fontSize: 11 }}>{cc} calls</div></div></div></td>
-              <td style={{ ...S.td, color: C.muted }}>{c.phone || "—"}</td>
-              <td style={{ ...S.td, color: C.muted }}>{c.customer_type || "—"}</td>
-              <td style={{ ...S.td, color: C.muted }}>{c.priority || "—"}</td>
-              <td style={S.td}><Badge label={c.category || "Business"} color={c.category === "Business" ? C.brand : C.purple} /></td>
-              <td style={S.td}>{c.dnc ? <Badge label="DNC" color={C.red} /> : <Badge label={c.lead_status || "Pending"} color={c.lead_status === "Contacted" ? C.green : c.lead_status === "Converted" ? C.brand : C.yellow} />}</td>
-              <td style={{ ...S.td, color: C.muted, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {isAdmin ? (c.assigned_agent ? <span style={{ color: C.brand, fontWeight: 600 }}>{c.assigned_agent}</span> : "—") : (c.notes || "—")}
-              </td>
-              <td style={S.td}>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => openEdit(c)} style={{ background: "#27272a", border: "none", color: C.text, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Edit</button>
-                  <button onClick={() => del(c.id, c.name)} style={{ background: C.red + "18", border: `1px solid ${C.red}33`, color: C.red, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Del</button>
-                </div>
-              </td>
-            </TR>
-          );
-        })}
-      </DataTable>
-
-      {modal === "c" && (
-        <Modal title={sel2 ? "Edit Contact" : "Add Contact"} onClose={() => setModal(null)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-            {[["Full Name *", "name"], ["Phone", "phone"], ["Customer Type", "customer_type"], ["Priority", "priority"]].map(([l, k]) => (
-              <div key={k}><label style={S.lbl}>{l}</label><input value={form[k]} onChange={set(k)} style={S.inp} /></div>
-            ))}
-            <div><label style={S.lbl}>Category</label><select value={form.category} onChange={set("category")} style={S.inp}><option>Business</option><option>Individual</option></select></div>
-            <div><label style={S.lbl}>Lead Status</label><select value={form.lead_status} onChange={set("lead_status")} style={S.inp}><option>Pending</option><option>Contacted</option><option>Converted</option></select></div>
-            {isAdmin && <>
-              <div><label style={S.lbl}>Assigned Agent</label><select value={form.assigned_agent} onChange={set("assigned_agent")} style={S.inp}><option value="">Unassigned</option>{agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}</select></div>
-              <div><label style={S.lbl}>Assigned Campaign</label><select value={form.assigned_promo} onChange={set("assigned_promo")} style={S.inp}><option value="">None</option>{promos.map(p => <option key={p.id}>{p.name}</option>)}</select></div>
-            </>}
-            <div style={{ gridColumn: "span 2" }}><label style={S.lbl}>Notes</label><input value={form.notes} onChange={set("notes")} style={S.inp} /></div>
-            <div style={{ gridColumn: "span 2", display: "flex", alignItems: "center", gap: 10 }}>
-              <input type="checkbox" id="dnc" checked={form.dnc} onChange={e => setForm(p => ({ ...p, dnc: e.target.checked }))} style={{ width: 16, height: 16, cursor: "pointer" }} />
-              <label htmlFor="dnc" style={{ color: C.red, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Do Not Call (DNC)</label>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
-            <Btn onClick={save} disabled={saving || !form.name} style={{ flex: 1, padding: 12 }}>{saving ? "Saving..." : sel2 ? "Save Changes" : "Add Contact"}</Btn>
-            <Btn onClick={() => setModal(null)} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
@@ -813,12 +680,12 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   const myLeads = contacts.filter(c => c.assigned_agent === user.name && c.lead_status !== "Contacted" && !c.dnc);
   const myOC = Object.keys(OC).map(o => ({ name: o, count: mine.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
 
+  // FIX: Directory removed from TABS
   const TABS = [
     { key: "queue", label: `My Queue (${myLeads.length})` },
     { key: "stats", label: "My Stats" },
     { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` },
     { key: "allcalls", label: "Team Activity" },
-    { key: "contacts", label: "Directory" },
   ];
 
   function Nav() {
@@ -834,6 +701,8 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* FIX: Manual Refresh Button added */}
+          <Btn onClick={onRefresh} color="#27272a" textColor={C.text}>🔄 Refresh</Btn>
           <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, borderLeft: `1px solid ${C.border}`, paddingLeft: 16 }}>
             <Av name={user.name} size={30} />
@@ -914,7 +783,6 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
         )}
 
         {tab === "callbacks" && <CallbacksTab calls={mine} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
-        {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin={false} />}
 
         {tab === "allcalls" && (
           <div>
@@ -995,13 +863,13 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
     return true;
   }), [calls, fAgent, fOutcome, fPromo, fSearch]);
 
+  // FIX: Directory removed from TABS
   const TABS = [
     { key: "dashboard", label: "Dashboard" },
     { key: "campaigns", label: "Campaigns" },
     { key: "agents", label: "Team" },
     { key: "calls", label: "Call Logs" },
     { key: "callbacks", label: `Callbacks${cbPending.length > 0 ? ` (${cbPending.length})` : ""}` },
-    { key: "contacts", label: "Directory" },
   ];
 
   // Promo CRUD
@@ -1084,7 +952,9 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
             <button key={t.key} onClick={() => { setTab(t.key); setCampDetail(null); setAgentInspect(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          {/* FIX: Manual Refresh Button added */}
+          <Btn onClick={onRefresh} color="#27272a" textColor={C.text}>🔄 Refresh</Btn>
           <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
           <button onClick={onLogout} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>Logout</button>
         </div>
@@ -1388,7 +1258,6 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
         )}
 
         {tab === "callbacks" && <CallbacksTab calls={calls} isAdmin onRefresh={onRefresh} toast={toast} />}
-        {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin />}
       </div>
 
       {/* ── PROMO MODAL ── */}
@@ -1447,7 +1316,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
         </Modal>
       )}
 
-      {logOpen && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={null} prefill={null} onClose={() => setLogOpen(false)} onDone={onRefresh} toast={toast} />}
+      {showLogCall && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={null} prefill={null} onClose={() => setShowLogCall(false)} onDone={onRefresh} toast={toast} />}
     </div>
   );
 }
@@ -1482,13 +1351,8 @@ export default function App() {
     finally { if (!silent) setLoading(false); }
   }, []);
 
+  // FIX: Only load once on mount. Auto 30-sec refresh rule is removed.
   useEffect(() => { load(); }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    const t = setInterval(() => load(true), 30000);
-    return () => clearInterval(t);
-  }, [user, load]);
 
   if (loading) return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "'Inter',system-ui,sans-serif", flexDirection: "column", gap: 20 }}>
