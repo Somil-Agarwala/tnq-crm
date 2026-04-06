@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 
-// ── SUPABASE ─────────────────────────────────────────────────
 const SUPABASE_URL = "https://btqcxzjrdpiyyqcyrimk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ0cWN4empyZHBpeXlxY3lyaW1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyODQ2MDIsImV4cCI6MjA4Nzg2MDYwMn0.PGy-UjyjT0pczlmac9QivO-j_MUt4hbZqkClypY1868";
 const ADMIN_PIN = "0000";
@@ -10,7 +9,7 @@ const db = {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=${order}.desc`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
-    if (!res.ok) throw new Error(`Fetch failed`);
+    if (!res.ok) throw new Error(res.statusText);
     return res.json();
   },
   async insert(table, data) {
@@ -19,7 +18,7 @@ const db = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw new Error(`Insert failed`);
+    if (!res.ok) throw new Error(res.statusText);
     return res.json();
   },
   async update(table, id, data) {
@@ -28,28 +27,35 @@ const db = {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw new Error(`Update failed`);
+    if (!res.ok) throw new Error(res.statusText);
     return res.json();
   },
-  async delete(table, id) {
+  async remove(table, id) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
-    if (!res.ok) throw new Error(`Delete failed`);
+    if (!res.ok) throw new Error(res.statusText);
   },
-  async deleteWhere(table, column, value) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${column}=eq.${encodeURIComponent(value)}`, {
+  async removeMany(table, ids) {
+    if (!ids.length) return;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=in.(${ids.join(",")})`, {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
-    if (!res.ok) throw new Error(`DeleteWhere failed`);
+    if (!res.ok) throw new Error(res.statusText);
+  },
+  async clearPending(agentName, promoName, since) {
+    let url = `${SUPABASE_URL}/rest/v1/contacts?lead_status=eq.Pending&assigned_agent=eq.${encodeURIComponent(agentName)}&assigned_promo=eq.${encodeURIComponent(promoName)}`;
+    if (since) url += `&assigned_at=gte.${encodeURIComponent(since)}`;
+    const res = await fetch(url, { method: "DELETE", headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+    if (!res.ok) throw new Error(res.statusText);
   }
 };
 
-// ── DESIGN TOKENS ─────────────────────────────────────────────
 const C = {
-  brand: "#3b82f6", brandText: "#ffffff", bg: "#09090b", card: "#18181b", border: "#27272a",
+  brand: "#3b82f6", brandText: "#fff",
+  bg: "#09090b", card: "#18181b", border: "#27272a",
   text: "#fafafa", muted: "#a1a1aa", subtle: "#52525b",
   green: "#10b981", yellow: "#f59e0b", red: "#ef4444", purple: "#8b5cf6",
 };
@@ -57,39 +63,50 @@ const C = {
 const S = {
   inp: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, padding: "10px 14px", fontSize: 14, width: "100%", outline: "none", boxSizing: "border-box", fontFamily: "inherit" },
   lbl: { color: C.muted, fontSize: 11, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", display: "block", marginBottom: 6 },
-  th: { padding: "12px 18px", color: C.muted, fontSize: 11, fontWeight: 600, letterSpacing: 0.5, textAlign: "left", textTransform: "uppercase", borderBottom: `1px solid ${C.border}`, background: C.card, whiteSpace: "nowrap" },
+  th: { padding: "12px 18px", color: C.muted, fontSize: 11, fontWeight: 600, textAlign: "left", textTransform: "uppercase", borderBottom: `1px solid ${C.border}`, background: C.card, whiteSpace: "nowrap" },
   td: { padding: "13px 18px", fontSize: 13, borderBottom: `1px solid ${C.border}`, verticalAlign: "middle", color: "#e4e4e7" },
 };
 
-const outcomeColor = {
+const OC = {
   "Converted": C.green, "Very Interested": C.brand, "Interested": C.purple,
-  "Callback Requested": C.yellow, "Not Interested": C.subtle, "No Answer": C.muted, "Busy": "#f97316", "Wrong Number": C.red,
+  "Callback Requested": C.yellow, "Not Interested": C.subtle,
+  "No Answer": C.muted, "Busy": "#f97316", "Wrong Number": C.red,
 };
 
-// ── SHARED COMPONENTS ────────────────────────────────────────
-const Badge = ({ label, color }) => <span style={{ background: color + "1A", color, border: `1px solid ${color}33`, borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>;
-const Avatar = ({ name, size = 32 }) => <div style={{ background: "#27272a", borderRadius: "50%", width: size, height: size, minWidth: size, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 700, color: C.text }}>{name?.[0]?.toUpperCase() || "?"}</div>;
+const Badge = ({ label, color }) => (
+  <span style={{ background: color + "1A", color, border: `1px solid ${color}33`, borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>
+);
+
+const Av = ({ name, size = 32 }) => (
+  <div style={{ background: "#27272a", borderRadius: "50%", width: size, height: size, minWidth: size, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 700, color: C.text }}>
+    {name?.[0]?.toUpperCase() || "?"}
+  </div>
+);
 
 function Toast({ msg, type }) {
   return (
-    <div style={{ position: "fixed", bottom: 28, right: 28, zIndex: 9999, background: type === "error" ? "#450a0a" : "#052e16", border: `1px solid ${type === "error" ? C.red + "55" : C.green + "55"}`, color: C.text, borderRadius: 10, padding: "14px 24px", fontWeight: 600, fontSize: 14, boxShadow: "0 10px 40px rgba(0,0,0,0.5)", display: "flex", alignItems: "center", gap: 10 }}>
-      <span>{type === "error" ? "❌" : "✅"}</span> {msg}
+    <div style={{ position: "fixed", bottom: 28, right: 28, zIndex: 9999, background: type === "error" ? "#450a0a" : "#052e16", border: `1px solid ${type === "error" ? "#ef444455" : "#10b98155"}`, color: C.text, borderRadius: 10, padding: "14px 24px", fontWeight: 600, fontSize: 14, boxShadow: "0 10px 40px rgba(0,0,0,.5)", display: "flex", alignItems: "center", gap: 10 }}>
+      {type === "error" ? "✗" : "✓"} {msg}
     </div>
   );
 }
 
 function Modal({ title, onClose, children, width = 560 }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 32, width, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 50px rgba(0,0,0,0.6)" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 32, width, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
-          <div style={{ fontWeight: 800, fontSize: 18, color: C.text }}>{title}</div>
-          <button onClick={onClose} style={{ background: "#27272a", border: "none", color: C.muted, fontSize: 16, cursor: "pointer", borderRadius: 6, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>{title}</div>
+          <button onClick={onClose} style={{ background: "#27272a", border: "none", color: C.muted, fontSize: 16, cursor: "pointer", borderRadius: 6, width: 28, height: 28 }}>✕</button>
         </div>
         {children}
       </div>
     </div>
   );
+}
+
+function Card({ children, style = {} }) {
+  return <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, ...style }}>{children}</div>;
 }
 
 function StatCard({ label, value, accent = C.brand, sub }) {
@@ -103,804 +120,1391 @@ function StatCard({ label, value, accent = C.brand, sub }) {
   );
 }
 
-function Btn({ children, onClick, color = C.brand, textColor = C.brandText, disabled, style = {} }) {
-  return <button onClick={onClick} disabled={disabled} style={{ background: disabled ? C.border : color, color: disabled ? C.muted : textColor, border: "none", borderRadius: 8, padding: "10px 18px", fontWeight: 600, fontSize: 13, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "opacity 0.2s", ...style }}>{children}</button>;
+function Btn({ children, onClick, color = C.brand, textColor = C.brandText, disabled, outline, style = {} }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      background: disabled ? C.border : (outline ? "transparent" : color),
+      color: disabled ? C.muted : textColor,
+      border: outline ? `1px solid ${color}` : "none",
+      borderRadius: 8, padding: "10px 18px", fontWeight: 600, fontSize: 13,
+      cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", ...style
+    }}>{children}</button>
+  );
 }
 
-function exportToCSV(data, filename) {
+function ProgBar({ value, color = C.brand, height = 8 }) {
+  return (
+    <div style={{ background: "#27272a", borderRadius: 999, height, overflow: "hidden" }}>
+      <div style={{ width: `${Math.min(100, value)}%`, height: "100%", background: color, borderRadius: 999 }} />
+    </div>
+  );
+}
+
+function exportCSV(data, name) {
   if (!data.length) return;
   const keys = Object.keys(data[0]);
-  const csv = [keys.join(","), ...data.map(row => keys.map(k => `"${(row[k] ?? "").toString().replace(/"/g, '""')}"`).join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  const csv = [keys.join(","), ...data.map(r => keys.map(k => `"${(r[k] ?? "").toString().replace(/"/g, '""')}"`).join(","))].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = name; a.click();
 }
 
-// ════════════════════════════════════════════════════════════
-// LOGIN SCREEN
-// ════════════════════════════════════════════════════════════
-function LoginScreen({ agents, onLogin }) {
-  const [selectedAgent, setSelectedAgent] = useState("");
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
+// ── TABLE WRAPPER ─────────────────────────────────────────────
+function DataTable({ headers, children, empty = "No data." }) {
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr>{headers.map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
+          <tbody>{children}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
-  function handleLogin() {
-    setError("");
-    if (isAdmin) {
-      if (pin === ADMIN_PIN) onLogin({ name: "Admin", role: "admin" });
-      else setError("Incorrect admin PIN.");
-      return;
-    }
-    if (!selectedAgent) { setError("Please select your name."); return; }
-    const agent = agents.find(a => a.name === selectedAgent);
-    if (!agent) { setError("Agent not found."); return; }
-    if (String(pin) !== String(agent.pin)) { setError("Incorrect PIN."); return; }
-    onLogin({ ...agent, role: "agent" });
+function TR({ children, selected }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <tr style={{ background: selected ? C.brand + "11" : hov ? "#1c1c1f" : "transparent", transition: "background .15s" }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      {children}
+    </tr>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// LOGIN
+// ═══════════════════════════════════════════════════════════
+function LoginScreen({ agents, onLogin }) {
+  const [agent, setAgent] = useState("");
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState("");
+  const [admin, setAdmin] = useState(false);
+
+  function login() {
+    setErr("");
+    if (admin) { pin === ADMIN_PIN ? onLogin({ name: "Admin", role: "admin" }) : setErr("Wrong PIN."); return; }
+    if (!agent) { setErr("Select your name."); return; }
+    const a = agents.find(x => x.name === agent);
+    if (!a) { setErr("Agent not found."); return; }
+    if (String(pin) !== String(a.pin)) { setErr("Wrong PIN."); return; }
+    onLogin({ ...a, role: "agent" });
   }
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <div style={{ width: 400, padding: 48, background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, boxShadow: "0 24px 80px rgba(0,0,0,0.7)" }}>
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter',system-ui,sans-serif" }}>
+      <div style={{ width: 400, padding: 48, background: C.card, borderRadius: 20, border: `1px solid ${C.border}` }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <div style={{ background: C.brand, borderRadius: 14, width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, margin: "0 auto 16px" }}>📞</div>
-          <div style={{ fontWeight: 800, fontSize: 24, color: C.text, letterSpacing: "-0.5px" }}>Tanishq CRM</div>
+          <div style={{ fontWeight: 800, fontSize: 24, letterSpacing: "-0.5px" }}>Tanishq CRM</div>
+          <div style={{ color: C.brand, fontSize: 12, fontWeight: 600, letterSpacing: 1.5, marginTop: 4 }}>OUTREACH WORKSPACE</div>
         </div>
 
         <div style={{ display: "flex", background: C.bg, borderRadius: 10, padding: 4, marginBottom: 28, border: `1px solid ${C.border}` }}>
-          {[["Agent", false], ["Admin", true]].map(([label, val]) => (
-            <button key={label} onClick={() => { setIsAdmin(val); setError(""); setPin(""); }}
-              style={{ flex: 1, padding: "10px", border: "none", borderRadius: 7, cursor: "pointer", fontWeight: 700, fontSize: 13,
-                background: isAdmin === val ? C.card : "transparent", color: isAdmin === val ? C.text : C.muted }}>
-              {label}
+          {[["Agent", false], ["Admin", true]].map(([l, v]) => (
+            <button key={l} onClick={() => { setAdmin(v); setErr(""); setPin(""); }}
+              style={{ flex: 1, padding: 10, border: "none", borderRadius: 7, cursor: "pointer", fontWeight: 700, fontSize: 13, background: admin === v ? C.card : "transparent", color: admin === v ? C.text : C.muted }}>
+              {l}
             </button>
           ))}
         </div>
 
-        {!isAdmin && (
+        {!admin && (
           <div style={{ marginBottom: 18 }}>
             <label style={S.lbl}>Your Name</label>
-            <select value={selectedAgent} onChange={e => setSelectedAgent(e.target.value)} style={S.inp}>
+            <select value={agent} onChange={e => setAgent(e.target.value)} style={S.inp}>
               <option value="">Select your name...</option>
-              {agents.filter(a => a.status === "Active" && a.role !== "admin").map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+              {agents.filter(a => a.status === "Active").map(a => <option key={a.id} value={a.name}>{a.name} — {a.role}</option>)}
             </select>
           </div>
         )}
 
         <div style={{ marginBottom: 24 }}>
-          <label style={S.lbl}>{isAdmin ? "Admin PIN" : "Security PIN"}</label>
-          <input type="password" maxLength={6} value={pin} onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="• • • •" style={{ ...S.inp, fontSize: 28, letterSpacing: 14, textAlign: "center", padding: "14px" }} />
+          <label style={S.lbl}>{admin ? "Admin PIN" : "Security PIN"}</label>
+          <input type="password" maxLength={6} value={pin} onChange={e => setPin(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && login()} placeholder="••••"
+            style={{ ...S.inp, fontSize: 28, letterSpacing: 14, textAlign: "center", padding: 14 }} />
         </div>
-        {error && <div style={{ color: C.red, fontSize: 13, marginBottom: 16, textAlign: "center" }}>{error}</div>}
 
-        <button onClick={handleLogin} style={{ width: "100%", background: C.brand, color: C.brandText, border: "none", borderRadius: 10, padding: "14px", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
-          {isAdmin ? "Access Admin Panel" : "Log In"}
+        {err && <div style={{ color: C.red, fontSize: 13, marginBottom: 16, textAlign: "center", background: C.red + "11", padding: "8px 12px", borderRadius: 6 }}>{err}</div>}
+
+        <button onClick={login} style={{ width: "100%", background: C.brand, color: C.brandText, border: "none", borderRadius: 10, padding: 14, fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+          {admin ? "Access Admin Panel" : "Log In"}
         </button>
       </div>
     </div>
   );
 }
 
-// ════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // LOG CALL MODAL
-// ════════════════════════════════════════════════════════════
-function LogCallModal({ contacts, promos, agents, defaultAgent, prefilledLead, onClose, onSaved, showToast }) {
-  const [form, setForm] = useState({
-    contact_name: prefilledLead?.name || "", agent_name: defaultAgent || "", promo_name: prefilledLead?.assigned_promo || "",
-    duration_minutes: "", outcome: "Interested", interest_level: "Medium", callback_date: "", notes: ""
+// ═══════════════════════════════════════════════════════════
+function LogCallModal({ contacts, promos, agents, defaultAgent, prefill, onClose, onDone, toast }) {
+  const [f, setF] = useState({
+    contact_name: prefill?.name || "", agent_name: defaultAgent || "",
+    promo_name: prefill?.assigned_promo || "", duration_minutes: "",
+    outcome: "Interested", interest_level: "Medium", callback_date: "", notes: ""
   });
   const [saving, setSaving] = useState(false);
-  const needsCallback = form.outcome === "Callback Requested";
-  const canSave = form.contact_name && form.agent_name && (!needsCallback || form.callback_date);
+  const needsCB = f.outcome === "Callback Requested";
+  const ok = f.contact_name && f.agent_name && (!needsCB || f.callback_date);
 
   async function save() {
-    if (!canSave) return;
+    if (!ok) return;
     setSaving(true);
     try {
       const today = new Date().toISOString().slice(0, 10);
       const now = new Date().toTimeString().slice(0, 5);
-      await db.insert("call_logs", {
-        ...form, contact_id: prefilledLead?.id || null, duration_minutes: form.duration_minutes ? parseInt(form.duration_minutes) : null,
-        callback_date: form.callback_date || null, call_date: today, call_time: now, callback_done: false
-      });
-      if (prefilledLead) await db.update("contacts", prefilledLead.id, { lead_status: "Contacted" });
-      showToast("Call logged successfully ✓"); onSaved(); onClose();
-    } catch { showToast("Failed to save call.", "error"); } finally { setSaving(false); }
+      await db.insert("call_logs", { ...f, contact_id: prefill?.id || null, duration_minutes: f.duration_minutes ? parseInt(f.duration_minutes) : null, callback_date: f.callback_date || null, call_date: today, call_time: now, callback_done: false });
+      if (prefill) await db.update("contacts", prefill.id, { lead_status: "Contacted" });
+      toast("Call logged ✓"); onDone(); onClose();
+    } catch { toast("Failed to save.", "error"); }
+    finally { setSaving(false); }
   }
+
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
 
   return (
     <Modal title="📞 Log a Call" onClose={onClose}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
         <div>
-          <label style={S.lbl}>Contact Name</label>
-          {prefilledLead ? <input value={prefilledLead.name} disabled style={{ ...S.inp, opacity: 0.6 }} /> : 
-            <><input list="cnames" value={form.contact_name} onChange={e => setForm({ ...form, contact_name: e.target.value })} style={S.inp} placeholder="Search contacts..." />
-            <datalist id="cnames">{contacts.filter(c => !c.dnc).map(c => <option key={c.id} value={c.name} />)}</datalist></>}
+          <label style={S.lbl}>Contact</label>
+          {prefill ? <input value={prefill.name} disabled style={{ ...S.inp, opacity: .6 }} />
+            : <><input list="cl" value={f.contact_name} onChange={set("contact_name")} style={S.inp} placeholder="Search..." />
+               <datalist id="cl">{contacts.filter(c => !c.dnc).map(c => <option key={c.id} value={c.name} />)}</datalist></>}
         </div>
         <div>
           <label style={S.lbl}>Agent</label>
-          {defaultAgent ? <input value={defaultAgent} disabled style={{ ...S.inp, opacity: 0.6 }} /> :
-            <select value={form.agent_name} onChange={e => setForm({ ...form, agent_name: e.target.value })} style={S.inp}>
-              <option value="">Select agent...</option>{agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}
-            </select>}
+          {defaultAgent ? <input value={defaultAgent} disabled style={{ ...S.inp, opacity: .6 }} />
+            : <select value={f.agent_name} onChange={set("agent_name")} style={S.inp}>
+                <option value="">Select...</option>
+                {agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}
+              </select>}
         </div>
         <div>
-          <label style={S.lbl}>Promotion / Campaign</label>
-          {prefilledLead?.assigned_promo ? <input value={prefilledLead.assigned_promo} disabled style={{ ...S.inp, opacity: 0.6 }} /> :
-            <select value={form.promo_name} onChange={e => setForm({ ...form, promo_name: e.target.value })} style={S.inp}>
-              <option value="">Select campaign...</option>{promos.filter(p => p.status === "Active").map(p => <option key={p.id}>{p.name}</option>)}
-            </select>}
+          <label style={S.lbl}>Campaign</label>
+          {prefill?.assigned_promo ? <input value={prefill.assigned_promo} disabled style={{ ...S.inp, opacity: .6 }} />
+            : <select value={f.promo_name} onChange={set("promo_name")} style={S.inp}>
+                <option value="">Select...</option>
+                {promos.filter(p => p.status === "Active").map(p => <option key={p.id}>{p.name}</option>)}
+              </select>}
         </div>
-        <div><label style={S.lbl}>Duration (mins)</label><input type="number" min="1" value={form.duration_minutes} onChange={e => setForm({ ...form, duration_minutes: e.target.value })} style={S.inp} /></div>
-        <div><label style={S.lbl}>Outcome</label><select value={form.outcome} onChange={e => setForm({ ...form, outcome: e.target.value })} style={S.inp}>{Object.keys(outcomeColor).map(o => <option key={o}>{o}</option>)}</select></div>
-        <div><label style={S.lbl}>Interest Level</label><select value={form.interest_level} onChange={e => setForm({ ...form, interest_level: e.target.value })} style={S.inp}>{["High", "Medium", "Low"].map(i => <option key={i}>{i}</option>)}</select></div>
+        <div><label style={S.lbl}>Duration (mins)</label><input type="number" min="1" value={f.duration_minutes} onChange={set("duration_minutes")} style={S.inp} /></div>
+        <div>
+          <label style={S.lbl}>Outcome</label>
+          <select value={f.outcome} onChange={set("outcome")} style={S.inp}>
+            {Object.keys(OC).map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={S.lbl}>Interest</label>
+          <select value={f.interest_level} onChange={set("interest_level")} style={S.inp}>
+            {["High", "Medium", "Low"].map(i => <option key={i}>{i}</option>)}
+          </select>
+        </div>
         <div style={{ gridColumn: "span 2" }}>
-          <label style={S.lbl}>Callback Date {needsCallback ? <span style={{ color: C.red }}>* Required</span> : <span style={{ color: C.muted }}>(Optional)</span>}</label>
-          <input type="date" value={form.callback_date} onChange={e => setForm({ ...form, callback_date: e.target.value })} style={{ ...S.inp, border: needsCallback && !form.callback_date ? `1px solid ${C.red}` : `1px solid ${C.border}` }} />
+          <label style={S.lbl}>Callback Date {needsCB ? <span style={{ color: C.red }}>*Required</span> : <span style={{ color: C.muted }}>(Optional)</span>}</label>
+          <input type="date" value={f.callback_date} onChange={set("callback_date")} style={{ ...S.inp, border: needsCB && !f.callback_date ? `1px solid ${C.red}` : `1px solid ${C.border}` }} />
         </div>
-        <div style={{ gridColumn: "span 2" }}><label style={S.lbl}>Call Notes</label><input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={S.inp} placeholder="Key points..." /></div>
+        <div style={{ gridColumn: "span 2" }}><label style={S.lbl}>Notes</label><input value={f.notes} onChange={set("notes")} style={S.inp} placeholder="Key points from the call..." /></div>
       </div>
       <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
-        <Btn onClick={save} disabled={saving || !canSave} style={{ flex: 1, padding: 12 }}>{saving ? "Saving..." : "Save Call Log"}</Btn>
-        <Btn onClick={onClose} color="transparent" textColor={C.text} style={{ flex: 1, padding: 12, border: `1px solid ${C.border}` }}>Cancel</Btn>
+        <Btn onClick={save} disabled={saving || !ok} style={{ flex: 1, padding: 12 }}>{saving ? "Saving..." : "Save Call"}</Btn>
+        <Btn onClick={onClose} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
       </div>
     </Modal>
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// CALLBACKS TAB (SHARED)
-// ════════════════════════════════════════════════════════════
-function CallbacksTab({ calls, onRefresh, showToast }) {
-  const pending = calls.filter(c => c.callback_date && !c.callback_done);
-  async function markDone(id) {
-    try { await db.update("call_logs", id, { callback_done: true }); showToast("Completed ✓"); onRefresh(); } catch { showToast("Error", "error"); }
+// ═══════════════════════════════════════════════════════════
+// BULK CLEAR MODAL
+// ═══════════════════════════════════════════════════════════
+function ClearModal({ agentName, promoName, pending, onClose, onDone, toast }) {
+  const [tf, setTf] = useState("all");
+  const [clearing, setClearing] = useState(false);
+
+  const preview = useMemo(() => {
+    if (tf === "all") return pending;
+    const now = new Date();
+    const cut = new Date(now);
+    if (tf === "1h") cut.setHours(cut.getHours() - 1);
+    else if (tf === "24h") cut.setHours(cut.getHours() - 24);
+    else if (tf === "7d") cut.setDate(cut.getDate() - 7);
+    return pending.filter(l => l.assigned_at && new Date(l.assigned_at) >= cut);
+  }, [pending, tf]);
+
+  function getSince() {
+    if (tf === "all") return null;
+    const now = new Date();
+    if (tf === "1h") { now.setHours(now.getHours() - 1); return now.toISOString(); }
+    if (tf === "24h") { now.setHours(now.getHours() - 24); return now.toISOString(); }
+    if (tf === "7d") { now.setDate(now.getDate() - 7); return now.toISOString(); }
+    return null;
   }
+
+  async function go() {
+    if (!preview.length) return;
+    if (!window.confirm(`Delete ${preview.length} pending leads for ${agentName} on "${promoName}"?\n\nAlready-called contacts are SAFE.`)) return;
+    setClearing(true);
+    try { await db.clearPending(agentName, promoName, getSince()); toast(`Cleared ${preview.length} leads`); onDone(); onClose(); }
+    catch { toast("Error clearing.", "error"); }
+    finally { setClearing(false); }
+  }
+
+  return (
+    <Modal title="🗑️ Clear Queue — Safety Controls" onClose={onClose} width={500}>
+      <div style={{ background: C.red + "11", border: `1px solid ${C.red}33`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+        <div style={{ color: C.red, fontWeight: 700, marginBottom: 6 }}>⚠️ Only Pending Leads Are Affected</div>
+        <div style={{ color: C.muted, fontSize: 13, lineHeight: 1.6 }}>Leads already called (status = "Contacted") will NOT be deleted. Their call logs and notes are fully preserved.</div>
+      </div>
+      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14, marginBottom: 18 }}>
+        {[["Agent", agentName, C.brand], ["Campaign", promoName, C.text], ["Total Pending", `${pending.length} leads`, C.yellow]].map(([l, v, c]) => (
+          <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ color: C.muted, fontSize: 12, fontWeight: 600, textTransform: "uppercase" }}>{l}</span>
+            <span style={{ color: c, fontWeight: 700 }}>{v}</span>
+          </div>
+        ))}
+      </div>
+      <label style={S.lbl}>Time Window (surgical undo)</label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
+        {[["all", "All Pending", C.red], ["1h", "Last 1 Hour", C.yellow], ["24h", "Last 24 Hours", C.yellow], ["7d", "Last 7 Days", C.muted]].map(([v, l, c]) => (
+          <button key={v} onClick={() => setTf(v)} style={{ background: tf === v ? c + "22" : C.bg, border: `1px solid ${tf === v ? c : C.border}`, color: tf === v ? c : C.muted, borderRadius: 8, padding: "10px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, textAlign: "left" }}>{l}</button>
+        ))}
+      </div>
+      <div style={{ background: preview.length ? C.red + "11" : "#052e16", border: `1px solid ${preview.length ? C.red + "33" : C.green + "33"}`, borderRadius: 8, padding: 14, textAlign: "center", marginBottom: 20 }}>
+        <div style={{ fontWeight: 800, fontSize: 28, color: preview.length ? C.red : C.green }}>{preview.length}</div>
+        <div style={{ color: C.muted, fontSize: 13 }}>leads will be deleted</div>
+      </div>
+      <div style={{ display: "flex", gap: 12 }}>
+        <button onClick={go} disabled={clearing || !preview.length} style={{ flex: 1, background: preview.length ? C.red : C.border, color: preview.length ? C.text : C.muted, border: "none", borderRadius: 8, padding: 12, fontWeight: 700, cursor: preview.length ? "pointer" : "not-allowed", fontSize: 14 }}>
+          {clearing ? "Clearing..." : `Delete ${preview.length} Leads`}
+        </button>
+        <Btn onClick={onClose} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// CAMPAIGN DETAIL
+// ═══════════════════════════════════════════════════════════
+function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, toast }) {
+  const [agView, setAgView] = useState(null);
+  const [clearTarget, setClearTarget] = useState(null);
+  const [sel, setSel] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const cc = contacts.filter(c => c.assigned_promo === campaign.name);
+  const cl = calls.filter(c => c.promo_name === campaign.name);
+  const ags = agents.filter(a => cc.some(c => c.assigned_agent === a.name));
+
+  const agLeads = agView ? cc.filter(c => c.assigned_agent === agView.name) : [];
+  const filtered = agLeads.filter(l =>
+    (l.name || "").toLowerCase().includes(search.toLowerCase()) ||
+    (l.phone || "").includes(search) ||
+    (l.customer_type || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const tog = id => setSel(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const togAll = () => setSel(sel.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(l => l.id)));
+
+  async function delSel() {
+    if (!window.confirm(`Delete ${sel.size} leads?`)) return;
+    setBusy(true);
+    try { await db.removeMany("contacts", [...sel]); toast(`Deleted ${sel.size} leads`); setSel(new Set()); onRefresh(); }
+    catch { toast("Error.", "error"); } finally { setBusy(false); }
+  }
+
+  async function delOne(id, name) {
+    if (!window.confirm(`Delete "${name}"?`)) return;
+    try { await db.remove("contacts", id); toast("Lead deleted."); onRefresh(); }
+    catch { toast("Error.", "error"); }
+  }
+
+  // ── AGENT LEAD VIEW ──
+  if (agView) {
+    const pending = agLeads.filter(l => l.lead_status === "Pending");
+    const contacted = agLeads.filter(l => l.lead_status === "Contacted");
+    return (
+      <div>
+        <button onClick={() => { setAgView(null); setSel(new Set()); setSearch(""); }} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+          ← Back to {campaign.name}
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <Av name={agView.name} size={52} />
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{agView.name}'s Leads</div>
+              <div style={{ color: C.muted, fontSize: 13 }}>Campaign: <span style={{ color: C.brand, fontWeight: 600 }}>{campaign.name}</span></div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Btn color="#27272a" textColor={C.text} onClick={() => exportCSV(agLeads.map(l => ({ name: l.name, phone: l.phone, customer_type: l.customer_type, priority: l.priority, status: l.lead_status, assigned_at: l.assigned_at })), `${agView.name}_leads.csv`)}>⬇ Export</Btn>
+            {pending.length > 0 && (
+              <button onClick={() => setClearTarget({ agentName: agView.name, promoName: campaign.name, pending })}
+                style={{ background: C.red + "18", border: `1px solid ${C.red}44`, color: C.red, borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+                🗑️ Clear Queue ({pending.length})
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+          <StatCard label="Total" value={agLeads.length} />
+          <StatCard label="Pending" value={pending.length} accent={C.yellow} />
+          <StatCard label="Contacted" value={contacted.length} accent={C.green} />
+          <StatCard label="Calls Logged" value={cl.filter(c => c.agent_name === agView.name).length} accent={C.brand} />
+        </div>
+
+        {sel.size > 0 && (
+          <div style={{ background: C.brand + "18", border: `1px solid ${C.brand}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 14, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <span style={{ color: C.brand, fontWeight: 700 }}>{sel.size} selected</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={delSel} disabled={busy} style={{ background: C.red + "22", border: `1px solid ${C.red}44`, color: C.red, borderRadius: 8, padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+              {busy ? "Deleting..." : `🗑️ Delete ${sel.size}`}
+            </button>
+            <Btn onClick={() => setSel(new Set())} color="#27272a" textColor={C.text} style={{ padding: "8px 14px" }}>Clear</Btn>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 12, marginBottom: 14, alignItems: "center" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search leads..." style={{ ...S.inp, maxWidth: 340 }} />
+          <span style={{ color: C.muted, fontSize: 13 }}>{filtered.length} leads</span>
+        </div>
+
+        <DataTable headers={["", "Name", "Phone", "Customer Type", "Priority", "Status", "Assigned At", ""]}>
+          {filtered.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: C.muted, padding: 50 }}>No leads.</td></tr>}
+          {filtered.map(l => (
+            <TR key={l.id} selected={sel.has(l.id)}>
+              <td style={{ ...S.td, width: 44 }}><input type="checkbox" checked={sel.has(l.id)} onChange={() => tog(l.id)} style={{ cursor: "pointer" }} /></td>
+              <td style={S.td}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><Av name={l.name} size={28} /><span style={{ fontWeight: 600 }}>{l.name}</span></div></td>
+              <td style={{ ...S.td, color: C.muted }}>{l.phone || "—"}</td>
+              <td style={{ ...S.td, color: C.muted }}>{l.customer_type || "—"}</td>
+              <td style={{ ...S.td, color: C.muted }}>{l.priority || "—"}</td>
+              <td style={S.td}><Badge label={l.lead_status || "Pending"} color={l.lead_status === "Contacted" ? C.green : l.lead_status === "Converted" ? C.brand : C.yellow} /></td>
+              <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{l.assigned_at ? new Date(l.assigned_at).toLocaleString() : "—"}</td>
+              <td style={S.td}><button onClick={() => delOne(l.id, l.name)} style={{ background: C.red + "18", border: `1px solid ${C.red}33`, color: C.red, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Del</button></td>
+            </TR>
+          ))}
+        </DataTable>
+
+        {clearTarget && <ClearModal {...clearTarget} onClose={() => setClearTarget(null)} onDone={() => { onRefresh(); setAgView(null); }} toast={toast} />}
+      </div>
+    );
+  }
+
+  // ── CAMPAIGN OVERVIEW ──
+  const pitched = cl.length;
+  const converted = cl.filter(c => c.outcome === "Converted").length;
+  const rate = pitched ? Math.round((converted / pitched) * 100) : 0;
+
   return (
     <div>
-      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Pending Callbacks</div>
-      {pending.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: C.muted }}>All caught up!</div> : pending.map(c => (
-        <div key={c.id} style={{ background: C.card, border: `1px solid ${C.yellow}44`, borderLeft: `4px solid ${C.yellow}`, padding: 16, marginBottom: 12, borderRadius: 8, display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ color: C.yellow, fontWeight: 800, fontSize: 20 }}>{c.callback_date}</div>
-          <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>{c.contact_name}</div><div style={{ color: C.muted, fontSize: 13 }}>{c.promo_name}</div></div>
-          <Btn onClick={() => markDone(c.id)} color="#052e16" textColor={C.green}>✓ Done</Btn>
+      <button onClick={onBack} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Campaigns</button>
+
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+          <div style={{ fontSize: 26, fontWeight: 800 }}>{campaign.name}</div>
+          <Badge label={campaign.status} color={campaign.status === "Active" ? C.green : C.subtle} />
+        </div>
+        {campaign.description && <div style={{ color: C.muted }}>{campaign.description}</div>}
+      </div>
+
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 32 }}>
+        <StatCard label="Total Assigned" value={cc.length} />
+        <StatCard label="Pending" value={cc.filter(c => c.lead_status === "Pending").length} accent={C.yellow} />
+        <StatCard label="Contacted" value={cc.filter(c => c.lead_status === "Contacted").length} accent={C.green} />
+        <StatCard label="Calls" value={pitched} accent={C.brand} />
+        <StatCard label="Conversions" value={converted} accent={C.green} />
+        <StatCard label="Win Rate" value={rate + "%"} accent={C.purple} />
+      </div>
+
+      <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 16 }}>Agent Breakdown</div>
+
+      {ags.length === 0 ? (
+        <Card><div style={{ textAlign: "center", color: C.muted, padding: 40 }}>No agents assigned yet. Use "Import Leads" to assign contacts.</div></Card>
+      ) : ags.map(a => {
+        const al = cc.filter(c => c.assigned_agent === a.name);
+        const ap = al.filter(l => l.lead_status === "Pending");
+        const ac = al.filter(l => l.lead_status === "Contacted");
+        const acl = cl.filter(c => c.agent_name === a.name);
+        const aw = acl.filter(c => c.outcome === "Converted").length;
+        const prog = al.length ? Math.round((ac.length / al.length) * 100) : 0;
+
+        return (
+          <div key={a.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+              <Av name={a.name} size={44} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{a.name}</div>
+                <div style={{ color: C.muted, fontSize: 12 }}>{a.role}</div>
+              </div>
+              <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                {[["Assigned", al.length, C.text], ["Pending", ap.length, C.yellow], ["Contacted", ac.length, C.green], ["Calls", acl.length, C.brand], ["Wins", aw, C.purple]].map(([l, v, c]) => (
+                  <div key={l} style={{ textAlign: "center" }}>
+                    <div style={{ color: c, fontWeight: 800, fontSize: 20, lineHeight: 1 }}>{v}</div>
+                    <div style={{ color: C.muted, fontSize: 10, fontWeight: 600, marginTop: 3 }}>{l.toUpperCase()}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setAgView(a)} style={{ background: C.brand + "22", border: `1px solid ${C.brand}44`, color: C.brand, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                  View {al.length} Leads →
+                </button>
+                {ap.length > 0 && (
+                  <button onClick={() => setClearTarget({ agentName: a.name, promoName: campaign.name, pending: ap })}
+                    style={{ background: C.red + "18", border: `1px solid ${C.red}33`, color: C.red, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                    🗑️ Clear Queue
+                  </button>
+                )}
+              </div>
+            </div>
+            <ProgBar value={prog} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: C.muted }}>
+              <span>{prog}% contacted</span><span>{ac.length}/{al.length}</span>
+            </div>
+          </div>
+        );
+      })}
+
+      {clearTarget && <ClearModal {...clearTarget} onClose={() => setClearTarget(null)} onDone={onRefresh} toast={toast} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTACTS TAB
+// ═══════════════════════════════════════════════════════════
+function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmin }) {
+  const [search, setSearch] = useState("");
+  const [sf, setSf] = useState("");
+  const [modal, setModal] = useState(null);
+  const [sel2, setSel2] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [checked, setChecked] = useState(new Set());
+  const [bulk, setBulk] = useState("");
+  const [ra, setRa] = useState("");
+  const [rp, setRp] = useState("");
+  const [form, setForm] = useState({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
+
+  const filtered = useMemo(() =>
+    contacts.filter(c => {
+      const ms = (c.name || "").toLowerCase().includes(search.toLowerCase()) ||
+        (c.customer_type || "").toLowerCase().includes(search.toLowerCase()) ||
+        (c.phone || "").includes(search);
+      return ms && (!sf || c.lead_status === sf);
+    }), [contacts, search, sf]);
+
+  const togC = id => setChecked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const togAll = () => setChecked(checked.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(c => c.id)));
+
+  async function bulkDel() {
+    if (!window.confirm(`Delete ${checked.size} contacts?`)) return;
+    try { await db.removeMany("contacts", [...checked]); toast(`Deleted ${checked.size}.`, "error"); setChecked(new Set()); onRefresh(); }
+    catch { toast("Error.", "error"); }
+  }
+
+  async function bulkReassign() {
+    if (!ra && !rp) return;
+    const up = {};
+    if (ra) up.assigned_agent = ra;
+    if (rp) up.assigned_promo = rp;
+    try {
+      await Promise.all([...checked].map(id => db.update("contacts", id, up)));
+      toast(`Reassigned ${checked.size} contacts`); setChecked(new Set()); setBulk(""); onRefresh();
+    } catch { toast("Error.", "error"); }
+  }
+
+  function openAdd() { setSel2(null); setForm({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" }); setModal("c"); }
+  function openEdit(c) { setSel2(c); setForm({ name: c.name, phone: c.phone || "", customer_type: c.customer_type || "", priority: c.priority || "", category: c.category || "Business", dnc: c.dnc || false, notes: c.notes || "", assigned_agent: c.assigned_agent || "", assigned_promo: c.assigned_promo || "", lead_status: c.lead_status || "Pending" }); setModal("c"); }
+
+  async function save() {
+    if (!form.name) return;
+    setSaving(true);
+    try {
+      if (sel2) { await db.update("contacts", sel2.id, form); toast("Updated ✓"); }
+      else { await db.insert("contacts", form); toast("Added ✓"); }
+      setModal(null); onRefresh();
+    } catch { toast("Error.", "error"); } finally { setSaving(false); }
+  }
+
+  async function del(id, name) {
+    if (!window.confirm(`Delete "${name}"?`)) return;
+    try { await db.remove("contacts", id); toast("Deleted.", "error"); onRefresh(); }
+    catch { toast("Error.", "error"); }
+  }
+
+  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, flex: 1, flexWrap: "wrap" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search..." style={{ ...S.inp, maxWidth: 300 }} />
+          <select value={sf} onChange={e => setSf(e.target.value)} style={{ ...S.inp, maxWidth: 160 }}>
+            <option value="">All Statuses</option>
+            <option>Pending</option><option>Contacted</option><option>Converted</option>
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          {isAdmin && <Btn color="#27272a" textColor={C.text} onClick={() => exportCSV(contacts.map(c => ({ name: c.name, phone: c.phone, customer_type: c.customer_type, priority: c.priority, dnc: c.dnc, assigned_agent: c.assigned_agent, assigned_promo: c.assigned_promo, lead_status: c.lead_status })), "contacts.csv")}>⬇ Export</Btn>}
+          <Btn onClick={openAdd}>+ Add Contact</Btn>
+        </div>
+      </div>
+
+      {checked.size > 0 && (
+        <div style={{ background: C.brand + "18", border: `1px solid ${C.brand}44`, borderRadius: 10, padding: "12px 20px", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <span style={{ color: C.brand, fontWeight: 700 }}>{checked.size} selected</span>
+            <div style={{ flex: 1 }} />
+            {bulk === "reassign" ? (
+              <>
+                <select value={ra} onChange={e => setRa(e.target.value)} style={{ ...S.inp, width: 160 }}>
+                  <option value="">Keep Agent</option>
+                  {agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}
+                </select>
+                <select value={rp} onChange={e => setRp(e.target.value)} style={{ ...S.inp, width: 180 }}>
+                  <option value="">Keep Campaign</option>
+                  {promos.map(p => <option key={p.id}>{p.name}</option>)}
+                </select>
+                <Btn onClick={bulkReassign} disabled={!ra && !rp}>Apply</Btn>
+                <Btn onClick={() => setBulk("")} color="#27272a" textColor={C.text}>Cancel</Btn>
+              </>
+            ) : (
+              <>
+                {isAdmin && <Btn onClick={() => setBulk("reassign")} color="#27272a" textColor={C.text}>🔄 Reassign</Btn>}
+                <button onClick={bulkDel} style={{ background: C.red + "22", border: `1px solid ${C.red}44`, color: C.red, borderRadius: 8, padding: "10px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>🗑️ Delete {checked.size}</button>
+                <Btn onClick={() => setChecked(new Set())} color="#27272a" textColor={C.text}>✕ Clear</Btn>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ color: C.muted, fontSize: 12, marginBottom: 10 }}>Showing {filtered.length} of {contacts.length}</div>
+
+      <DataTable headers={["", "Contact", "Phone", "Customer Type", "Priority", "Type", "Status", isAdmin ? "Agent" : "Notes", ""]}>
+        {filtered.length === 0 && <tr><td colSpan={9} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 60 }}>No contacts.</td></tr>}
+        {filtered.map(c => {
+          const cc = calls.filter(x => x.contact_name === c.name).length;
+          const isSel = checked.has(c.id);
+          return (
+            <TR key={c.id} selected={isSel}>
+              <td style={{ ...S.td, width: 44 }}><input type="checkbox" checked={isSel} onChange={() => togC(c.id)} style={{ cursor: "pointer" }} /></td>
+              <td style={S.td}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><Av name={c.name} /><div><div style={{ fontWeight: 600, color: c.dnc ? C.muted : C.text }}>{c.name}</div><div style={{ color: C.muted, fontSize: 11 }}>{cc} calls</div></div></div></td>
+              <td style={{ ...S.td, color: C.muted }}>{c.phone || "—"}</td>
+              <td style={{ ...S.td, color: C.muted }}>{c.customer_type || "—"}</td>
+              <td style={{ ...S.td, color: C.muted }}>{c.priority || "—"}</td>
+              <td style={S.td}><Badge label={c.category || "Business"} color={c.category === "Business" ? C.brand : C.purple} /></td>
+              <td style={S.td}>{c.dnc ? <Badge label="DNC" color={C.red} /> : <Badge label={c.lead_status || "Pending"} color={c.lead_status === "Contacted" ? C.green : c.lead_status === "Converted" ? C.brand : C.yellow} />}</td>
+              <td style={{ ...S.td, color: C.muted, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {isAdmin ? (c.assigned_agent ? <span style={{ color: C.brand, fontWeight: 600 }}>{c.assigned_agent}</span> : "—") : (c.notes || "—")}
+              </td>
+              <td style={S.td}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => openEdit(c)} style={{ background: "#27272a", border: "none", color: C.text, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Edit</button>
+                  <button onClick={() => del(c.id, c.name)} style={{ background: C.red + "18", border: `1px solid ${C.red}33`, color: C.red, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Del</button>
+                </div>
+              </td>
+            </TR>
+          );
+        })}
+      </DataTable>
+
+      {modal === "c" && (
+        <Modal title={sel2 ? "Edit Contact" : "Add Contact"} onClose={() => setModal(null)}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+            {[["Full Name *", "name"], ["Phone", "phone"], ["Customer Type", "customer_type"], ["Priority", "priority"]].map(([l, k]) => (
+              <div key={k}><label style={S.lbl}>{l}</label><input value={form[k]} onChange={set(k)} style={S.inp} /></div>
+            ))}
+            <div><label style={S.lbl}>Category</label><select value={form.category} onChange={set("category")} style={S.inp}><option>Business</option><option>Individual</option></select></div>
+            <div><label style={S.lbl}>Lead Status</label><select value={form.lead_status} onChange={set("lead_status")} style={S.inp}><option>Pending</option><option>Contacted</option><option>Converted</option></select></div>
+            {isAdmin && <>
+              <div><label style={S.lbl}>Assigned Agent</label><select value={form.assigned_agent} onChange={set("assigned_agent")} style={S.inp}><option value="">Unassigned</option>{agents.filter(a => a.status === "Active").map(a => <option key={a.id}>{a.name}</option>)}</select></div>
+              <div><label style={S.lbl}>Assigned Campaign</label><select value={form.assigned_promo} onChange={set("assigned_promo")} style={S.inp}><option value="">None</option>{promos.map(p => <option key={p.id}>{p.name}</option>)}</select></div>
+            </>}
+            <div style={{ gridColumn: "span 2" }}><label style={S.lbl}>Notes</label><input value={form.notes} onChange={set("notes")} style={S.inp} /></div>
+            <div style={{ gridColumn: "span 2", display: "flex", alignItems: "center", gap: 10 }}>
+              <input type="checkbox" id="dnc" checked={form.dnc} onChange={e => setForm(p => ({ ...p, dnc: e.target.checked }))} style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <label htmlFor="dnc" style={{ color: C.red, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Do Not Call (DNC)</label>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+            <Btn onClick={save} disabled={saving || !form.name} style={{ flex: 1, padding: 12 }}>{saving ? "Saving..." : sel2 ? "Save Changes" : "Add Contact"}</Btn>
+            <Btn onClick={() => setModal(null)} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// CALLBACKS TAB
+// ═══════════════════════════════════════════════════════════
+function CallbacksTab({ calls, isAdmin, onRefresh, toast }) {
+  const [showDone, setShowDone] = useState(false);
+  const pending = calls.filter(c => c.callback_date && !c.callback_done);
+  const done = calls.filter(c => c.callback_done);
+
+  async function markDone(id) {
+    try { await db.update("call_logs", id, { callback_done: true }); toast("Done ✓"); onRefresh(); }
+    catch { toast("Error.", "error"); }
+  }
+
+  const list = showDone ? done : pending;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>Callbacks & Follow-ups</div>
+          <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{pending.length} pending · {done.length} completed</div>
+        </div>
+        <div style={{ display: "flex", background: C.bg, borderRadius: 8, padding: 4, border: `1px solid ${C.border}` }}>
+          {[["Pending", false], ["Completed", true]].map(([l, v]) => (
+            <button key={l} onClick={() => setShowDone(v)} style={{ padding: "7px 16px", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600, fontSize: 12, background: showDone === v ? C.card : "transparent", color: showDone === v ? C.text : C.muted }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {list.length === 0 ? (
+        <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}` }}>
+          <div style={{ color: C.muted, fontSize: 15 }}>{showDone ? "No completed callbacks." : "🎉 All caught up!"}</div>
+        </Card>
+      ) : list.map(c => (
+        <div key={c.id} style={{ background: C.card, border: `1px solid ${showDone ? C.border : C.yellow + "44"}`, borderLeft: `4px solid ${showDone ? C.green : C.yellow}`, borderRadius: 12, padding: "18px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
+          <div style={{ background: (showDone ? C.green : C.yellow) + "18", borderRadius: 10, padding: "10px 14px", textAlign: "center", minWidth: 56 }}>
+            <div style={{ color: showDone ? C.green : C.yellow, fontWeight: 800, fontSize: 22, lineHeight: 1 }}>{c.callback_date?.slice(8)}</div>
+            <div style={{ color: C.muted, fontSize: 10 }}>{c.callback_date?.slice(5, 7)}/{c.callback_date?.slice(0, 4)}</div>
+          </div>
+          <Av name={c.contact_name} size={44} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>{c.contact_name}</div>
+            <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>
+              {isAdmin && <span style={{ color: C.brand, fontWeight: 600, marginRight: 8 }}>{c.agent_name}</span>}
+              {c.promo_name}
+            </div>
+            {c.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 6, fontStyle: "italic" }}>"{c.notes}"</div>}
+          </div>
+          {!showDone && <button onClick={() => markDone(c.id)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>✓ Done</button>}
+          {showDone && <Badge label="Completed" color={C.green} />}
         </div>
       ))}
     </div>
   );
 }
 
-// ════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // AGENT PAGE
-// ════════════════════════════════════════════════════════════
-function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout, showToast }) {
+// ═══════════════════════════════════════════════════════════
+function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout, toast }) {
   const [tab, setTab] = useState("queue");
-  const [logModalLead, setLogModalLead] = useState(null);
-  const [showLogCall, setShowLogCall] = useState(false);
-  
-  // States for Queue Filtering and Sorting
-  const [queueFilter, setQueueFilter] = useState("All");
-  const [queueSort, setQueueSort] = useState("Default");
+  const [logLead, setLogLead] = useState(null);
+  const [logOpen, setLogOpen] = useState(false);
 
-  const myCalls = calls.filter(c => c.agent_name === user.name);
-  const myConversions = myCalls.filter(c => c.outcome === "Converted").length;
-  const myPending = myCalls.filter(c => c.callback_date && !c.callback_done);
-  const myRate = myCalls.length ? Math.round((myConversions / myCalls.length) * 100) : 0;
-  
-  const baseLeads = useMemo(() => contacts.filter(c => c.assigned_agent === user.name && c.lead_status !== "Contacted" && !c.dnc), [contacts, user.name]);
-
-  const assignedCampaigns = useMemo(() => {
-    const campaigns = baseLeads.map(c => c.assigned_promo).filter(Boolean);
-    return [...new Set(campaigns)];
-  }, [baseLeads]);
-
-  const displayedLeads = useMemo(() => {
-    let filtered = baseLeads;
-    if (queueFilter !== "All") filtered = filtered.filter(c => c.assigned_promo === queueFilter);
-    if (queueSort === "Name (A-Z)") filtered = [...filtered].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    else if (queueSort === "Priority") filtered = [...filtered].sort((a, b) => (a.priority || "").localeCompare(b.priority || ""));
-    return filtered;
-  }, [baseLeads, queueFilter, queueSort]);
+  const mine = calls.filter(c => c.agent_name === user.name);
+  const myWins = mine.filter(c => c.outcome === "Converted").length;
+  const myPending = mine.filter(c => c.callback_date && !c.callback_done);
+  const myRate = mine.length ? Math.round((myWins / mine.length) * 100) : 0;
+  const myLeads = contacts.filter(c => c.assigned_agent === user.name && c.lead_status !== "Contacted" && !c.dnc);
+  const myOC = Object.keys(OC).map(o => ({ name: o, count: mine.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
 
   const TABS = [
-    { key: "queue", label: `Queue (${baseLeads.length})` },
-    { key: "stats", label: "Stats" },
-    { key: "callbacks", label: `Callbacks (${myPending.length})` },
-    { key: "allcalls", label: "Team Activity" }
+    { key: "queue", label: `My Queue (${myLeads.length})` },
+    { key: "stats", label: "My Stats" },
+    { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` },
+    { key: "allcalls", label: "Team Activity" },
+    { key: "contacts", label: "Directory" },
   ];
 
-  const outcomeCounts = Object.keys(outcomeColor).map(o => ({ name: o, count: myCalls.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
-
-  return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
+  function Nav() {
+    return (
       <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 32 }}><div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div><span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span></div>
-        <div style={{ display: "flex", gap: 2, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 32 }}>
+          <div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
+          <span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span>
+        </div>
+        <div style={{ display: "flex", gap: 2, flex: 1, overflowX: "auto" }}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", cursor: "pointer", fontWeight: 600 }}>{t.label}</button>
+            <button key={t.key} onClick={() => setTab(t.key)} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <Btn onClick={onRefresh} color="#27272a" textColor={C.text}>🔄 Refresh</Btn>
-          <Btn onClick={() => setShowLogCall(true)} color={C.text} textColor={C.bg}>+ Log Call</Btn>
-          <button onClick={onLogout} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer" }}>Logout</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, borderLeft: `1px solid ${C.border}`, paddingLeft: 16 }}>
+            <Av name={user.name} size={30} />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
+            <button onClick={onLogout} style={{ background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer" }}>Logout</button>
+          </div>
         </div>
       </div>
+    );
+  }
 
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
+      <Nav />
       <div style={{ padding: "32px 36px", maxWidth: 1280, margin: "0 auto" }}>
-        
+
         {tab === "queue" && (
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 20 }}>My Action Queue</div>
-            {baseLeads.length > 0 && (
-              <div style={{ display: "flex", gap: 16, marginBottom: 24, background: C.card, padding: 16, borderRadius: 12, border: `1px solid ${C.border}` }}>
-                <div style={{ flex: 1 }}><label style={S.lbl}>Filter by Campaign</label><select value={queueFilter} onChange={e => setQueueFilter(e.target.value)} style={S.inp}><option value="All">All Campaigns ({baseLeads.length})</option>{assignedCampaigns.map(camp => <option key={camp} value={camp}>{camp}</option>)}</select></div>
-                <div style={{ flex: 1 }}><label style={S.lbl}>Sort By</label><select value={queueSort} onChange={e => setQueueSort(e.target.value)} style={S.inp}><option value="Default">Default Order</option><option value="Name (A-Z)">Name (A-Z)</option><option value="Priority">Priority</option></select></div>
-              </div>
-            )}
-            {displayedLeads.length === 0 ? <div style={{ textAlign: "center", padding: 60, color: C.muted, background: C.card, borderRadius: 12, border: `1px dashed ${C.border}` }}>{baseLeads.length > 0 ? "No leads match this filter." : "Queue empty! Great job."}</div> : displayedLeads.map(lead => (
-              <div key={lead.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "18px 24px", marginBottom: 14, display: "flex", alignItems: "center", gap: 20 }}>
-                <Avatar name={lead.name} size={46} />
-                <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 17 }}>{lead.name}</div><div style={{ color: C.muted, fontSize: 13, marginTop: 4, display: "flex", gap: 20, flexWrap: "wrap" }}><span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{lead.phone || "No phone"}</span></span>{lead.customer_type && <span>🏢 {lead.customer_type}</span>}{lead.priority && <span>⭐ {lead.priority}</span>}</div>{lead.assigned_promo && <div style={{ marginTop: 8 }}><Badge label={`Campaign: ${lead.assigned_promo}`} color={C.brand} /></div>}</div>
-                <Btn onClick={() => setLogModalLead(lead)} color="#052e16" textColor={C.green}>📞 Dial & Log</Btn>
-              </div>
-            ))}
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>My Action Queue</div>
+            <div style={{ color: C.muted, fontSize: 13, marginBottom: 24 }}>Contacts assigned to you. Log an outcome to clear them.</div>
+            {myLeads.length === 0
+              ? <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}` }}><div style={{ color: C.muted, fontSize: 15 }}>🎉 Queue empty!</div></Card>
+              : myLeads.map(l => (
+                <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "18px 24px", marginBottom: 14, display: "flex", alignItems: "center", gap: 20 }}>
+                  <Av name={l.name} size={46} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 800, fontSize: 17 }}>{l.name}</div>
+                    <div style={{ color: C.muted, fontSize: 13, marginTop: 4, display: "flex", gap: 20, flexWrap: "wrap" }}>
+                      <span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{l.phone || "No phone"}</span></span>
+                      {l.customer_type && <span>🏢 {l.customer_type}</span>}
+                      {l.priority && <span>⭐ {l.priority}</span>}
+                    </div>
+                    {l.assigned_promo && <div style={{ marginTop: 8 }}><Badge label={`Campaign: ${l.assigned_promo}`} color={C.brand} /></div>}
+                  </div>
+                  <button onClick={() => setLogLead(l)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "12px 24px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>📞 Dial & Log</button>
+                </div>
+              ))}
           </div>
         )}
 
-        {tab === "stats" && <div><div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Stats</div><div style={{ display: "flex", gap: 16 }}><StatCard label="Total Calls" value={myCalls.length} /><StatCard label="Conversions" value={myConversions} accent={C.green} /><StatCard label="Win Rate" value={myRate + "%"} accent={C.purple} /></div></div>}
-        {tab === "callbacks" && <CallbacksTab calls={myCalls} onRefresh={onRefresh} showToast={showToast} />}
-        
+        {tab === "stats" && (
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Performance</div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
+              <StatCard label="Total Calls" value={mine.length} />
+              <StatCard label="Conversions" value={myWins} accent={C.green} />
+              <StatCard label="Win Rate" value={myRate + "%"} accent={C.purple} />
+              <StatCard label="Callbacks" value={myPending.length} accent={C.yellow} />
+            </div>
+            {myOC.length > 0 && (
+              <Card style={{ marginBottom: 24 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Outcome Breakdown</div>
+                {myOC.map(o => (
+                  <div key={o.name} style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+                    <div style={{ width: 140, color: C.muted, fontSize: 13 }}>{o.name}</div>
+                    <div style={{ flex: 1 }}><ProgBar value={(o.count / mine.length) * 100} color={OC[o.name]} /></div>
+                    <div style={{ color: C.text, fontSize: 13, fontWeight: 600, width: 24, textAlign: "right" }}>{o.count}</div>
+                  </div>
+                ))}
+              </Card>
+            )}
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>Recent Activity</div>
+            <DataTable headers={["Contact", "Date", "Campaign", "Dur", "Outcome", "Interest", "Notes"]}>
+              {mine.length === 0 && <tr><td colSpan={7} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls yet.</td></tr>}
+              {mine.slice(0, 20).map(c => (
+                <TR key={c.id}>
+                  <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
+                  <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
+                  <td style={S.td}>{c.promo_name}</td>
+                  <td style={{ ...S.td, color: C.muted, textAlign: "center" }}>{c.duration_minutes ? c.duration_minutes + "m" : "—"}</td>
+                  <td style={S.td}><Badge label={c.outcome} color={OC[c.outcome] || C.muted} /></td>
+                  <td style={S.td}><Badge label={c.interest_level} color={c.interest_level === "High" ? C.green : c.interest_level === "Medium" ? C.yellow : C.muted} /></td>
+                  <td style={{ ...S.td, color: C.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
+                </TR>
+              ))}
+            </DataTable>
+          </div>
+        )}
+
+        {tab === "callbacks" && <CallbacksTab calls={mine} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
+        {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin={false} />}
+
         {tab === "allcalls" && (
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Team Activity Feed</div>
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead><tr>{["Contact", "Date", "Agent", "Campaign", "Outcome", "Notes"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-                  <tbody>
-                    {calls.length === 0 && <tr><td colSpan={6} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No activity yet.</td></tr>}
-                    {calls.slice(0, 50).map(c => (
-                      <tr key={c.id} onMouseOver={e => e.currentTarget.style.background = "#1c1c1f"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
-                        <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
-                        <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
-                        <td style={S.td}><Badge label={c.agent_name} color={c.agent_name === user.name ? C.brand : C.subtle} /></td>
-                        <td style={S.td}>{c.promo_name}</td>
-                        <td style={S.td}><Badge label={c.outcome} color={outcomeColor[c.outcome] || C.muted} /></td>
-                        <td style={{ ...S.td, color: C.muted, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Team Activity</div>
+            <DataTable headers={["Contact", "Date", "Agent", "Campaign", "Outcome", "Notes"]}>
+              {calls.length === 0 && <tr><td colSpan={6} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No activity yet.</td></tr>}
+              {calls.slice(0, 50).map(c => (
+                <TR key={c.id}>
+                  <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
+                  <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
+                  <td style={S.td}><Badge label={c.agent_name} color={c.agent_name === user.name ? C.brand : C.subtle} /></td>
+                  <td style={S.td}>{c.promo_name}</td>
+                  <td style={S.td}><Badge label={c.outcome} color={OC[c.outcome] || C.muted} /></td>
+                  <td style={{ ...S.td, color: C.muted, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
+                </TR>
+              ))}
+            </DataTable>
           </div>
         )}
       </div>
 
-      {showLogCall && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} onClose={() => setShowLogCall(false)} onSaved={onRefresh} showToast={showToast} />}
-      {logModalLead && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} prefilledLead={logModalLead} onClose={() => setLogModalLead(null)} onSaved={onRefresh} showToast={showToast} />}
+      {logOpen && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} prefill={null} onClose={() => setLogOpen(false)} onDone={onRefresh} toast={toast} />}
+      {logLead && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} prefill={logLead} onClose={() => setLogLead(null)} onDone={onRefresh} toast={toast} />}
     </div>
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// ADMIN PAGE (SUPERVISOR COMMAND CENTER)
-// ════════════════════════════════════════════════════════════
-function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, showToast }) {
-  const [tab, setTab] = useState("campaigns");
-  const [showLogCall, setShowLogCall] = useState(false);
+// ═══════════════════════════════════════════════════════════
+// ADMIN PAGE
+// ═══════════════════════════════════════════════════════════
+function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast }) {
+  const [tab, setTab] = useState("dashboard");
+  const [logOpen, setLogOpen] = useState(false);
+  const [campDetail, setCampDetail] = useState(null);
+  const [agentInspect, setAgentInspect] = useState(null);
 
-  // Promo Management
-  const [promoModal, setPromoModal] = useState(null);
-  const [selectedPromo, setSelectedPromo] = useState(null);
-  const [promoForm, setPromoForm] = useState({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" });
-  
-  // Drill Down
-  const [viewPromoDetails, setViewPromoDetails] = useState(null);
-  const [viewPromoAgent, setViewPromoAgent] = useState(null);
-  const [selectedLeads, setSelectedLeads] = useState([]);
+  // Promo CRUD
+  const [pModal, setPModal] = useState(null);
+  const [pSel, setPSel] = useState(null);
+  const [pForm, setPForm] = useState({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" });
 
-  // Agent Management
-  const [agentModal, setAgentModal] = useState(null);
-  const [selectedAgentModal, setSelectedAgentModal] = useState(null);
-  const [agentForm, setAgentForm] = useState({ name: "", role: "Agent", phone_ext: "", pin: "", status: "Active" });
+  // Agent CRUD
+  const [aModal, setAModal] = useState(null);
+  const [aSel, setASel] = useState(null);
+  const [aForm, setAForm] = useState({ name: "", role: "Agent", phone_ext: "", pin: "", status: "Active" });
 
-  // CSV Import
-  const [importModal, setImportModal] = useState(false);
-  const [importAgent, setImportAgent] = useState("");
-  const [importPromo, setImportPromo] = useState("");
-  const [parsedCsv, setParsedCsv] = useState([]);
+  // Call filters
+  const [fAgent, setFA] = useState("");
+  const [fOutcome, setFO] = useState("");
+  const [fPromo, setFP] = useState("");
+  const [fSearch, setFS] = useState("");
 
-  const activePromos = promos.filter(p => p.status === "Active");
+  // Import
+  const [impModal, setImpModal] = useState(false);
+  const [impAgent, setIA] = useState("");
+  const [impPromo, setIP] = useState("");
+  const [csv, setCsv] = useState([]);
+  const [importing, setImporting] = useState(false);
+
   const conversions = calls.filter(c => c.outcome === "Converted").length;
   const convRate = calls.length ? Math.round((conversions / calls.length) * 100) : 0;
-  const pendingCallbacks = calls.filter(c => c.callback_date && !c.callback_done);
+  const cbPending = calls.filter(c => c.callback_date && !c.callback_done);
+  const activePromos = promos.filter(p => p.status === "Active");
 
-  const agentStats = agents.map(a => ({ ...a, total: calls.filter(c => c.agent_name === a.name).length, converted: calls.filter(c => c.agent_name === a.name && c.outcome === "Converted").length })).sort((a, b) => b.converted - a.converted);
-  const outcomeCounts = Object.keys(outcomeColor).map(o => ({ name: o, count: calls.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
+  const agStats = agents.map(a => ({
+    ...a,
+    total: calls.filter(c => c.agent_name === a.name).length,
+    converted: calls.filter(c => c.agent_name === a.name && c.outcome === "Converted").length,
+  })).sort((a, b) => b.converted - a.converted);
 
-  const [viewAgent, setViewAgent] = useState(null);
+  const ocCounts = Object.keys(OC).map(o => ({ name: o, count: calls.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
 
-  const TABS = [{ key: "dashboard", label: "Dashboard" }, { key: "campaigns", label: "Campaigns" }, { key: "agents", label: "Team" }, { key: "calls", label: "Call Logs" }];
+  const filteredCalls = useMemo(() => calls.filter(c => {
+    if (fAgent && c.agent_name !== fAgent) return false;
+    if (fOutcome && c.outcome !== fOutcome) return false;
+    if (fPromo && c.promo_name !== fPromo) return false;
+    if (fSearch && !c.contact_name?.toLowerCase().includes(fSearch.toLowerCase()) && !c.notes?.toLowerCase().includes(fSearch.toLowerCase())) return false;
+    return true;
+  }), [calls, fAgent, fOutcome, fPromo, fSearch]);
 
-  function handleTabChange(k) { setTab(k); setViewPromoDetails(null); setViewPromoAgent(null); setSelectedLeads([]); setViewAgent(null); }
+  const TABS = [
+    { key: "dashboard", label: "Dashboard" },
+    { key: "campaigns", label: "Campaigns" },
+    { key: "agents", label: "Team" },
+    { key: "calls", label: "Call Logs" },
+    { key: "callbacks", label: `Callbacks${cbPending.length > 0 ? ` (${cbPending.length})` : ""}` },
+    { key: "contacts", label: "Directory" },
+  ];
 
+  // Promo CRUD
   async function savePromo() {
-    if (!promoForm.name) return;
+    if (!pForm.name) return;
     try {
-      if (selectedPromo) await db.update("promotions", selectedPromo.id, promoForm);
-      else await db.insert("promotions", promoForm);
-      showToast("Saved ✓"); setPromoModal(null); setSelectedPromo(null); onRefresh();
-    } catch { showToast("Error", "error"); }
+      pSel ? await db.update("promotions", pSel.id, pForm) : await db.insert("promotions", pForm);
+      toast(pSel ? "Campaign updated ✓" : "Campaign created ✓");
+      setPModal(null); setPSel(null); onRefresh();
+    } catch { toast("Error.", "error"); }
   }
-
-  // CASCADING DELETE
-  async function deletePromoCascade(id, name) {
-    if (!window.confirm(`⚠️ CRITICAL WARNING:\n\nDeleting "${name}" will PERMANENTLY WIPE all leads, call logs, and agent statistics tied to this campaign.\n\nTo keep stats, change status to "Expired" instead.\n\nAre you sure you want to completely erase it?`)) return;
-    try {
-      await db.deleteWhere("call_logs", "promo_name", name); 
-      await db.deleteWhere("contacts", "assigned_promo", name); 
-      await db.delete("promotions", id); 
-      showToast("Campaign entirely erased.", "error"); setViewPromoDetails(null); onRefresh();
-    } catch { showToast("Error deleting campaign.", "error"); }
+  async function delPromo(id, name) {
+    if (!window.confirm(`Delete "${name}"?`)) return;
+    try { await db.remove("promotions", id); toast("Deleted.", "error"); onRefresh(); }
+    catch { toast("Error.", "error"); }
   }
+  function editPromo(p) { setPSel(p); setPForm({ name: p.name, description: p.description || "", status: p.status, start_date: p.start_date || "", end_date: p.end_date || "", target_audience: p.target_audience || "All" }); setPModal("edit"); }
 
-  // UNDO LAST HOUR UPLOAD
-  async function undoLastHourUpload() {
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const recentLeads = contacts.filter(c => 
-      c.assigned_promo === viewPromoDetails.name && 
-      new Date(c.created_at) > oneHourAgo
-    );
-
-    if (recentLeads.length === 0) {
-      showToast("No leads were added to this campaign in the last 60 minutes.", "error");
-      return;
-    }
-
-    if (!window.confirm(`⚠️ UNDO UPLOAD: This will permanently delete ${recentLeads.length} leads assigned to ${viewPromoDetails.name} in the last hour. Proceed?`)) return;
-
-    try {
-      await Promise.all(recentLeads.map(c => db.delete("contacts", c.id)));
-      showToast(`Successfully removed ${recentLeads.length} recent leads.`);
-      onRefresh();
-    } catch (err) {
-      showToast("Error removing leads.", "error");
-    }
-  }
-
+  // Agent CRUD
   async function saveAgent() {
-    if (!agentForm.name || !agentForm.pin) return;
+    if (!aForm.name || !aForm.pin) return;
     try {
-      if (selectedAgentModal) await db.update("agents", selectedAgentModal.id, agentForm);
-      else await db.insert("agents", agentForm);
-      showToast("Saved ✓"); setAgentModal(null); onRefresh();
-    } catch { showToast("Error", "error"); }
+      aSel ? await db.update("agents", aSel.id, aForm) : await db.insert("agents", aForm);
+      toast(aSel ? "Agent updated ✓" : "Agent added ✓");
+      setAModal(null); setASel(null); onRefresh();
+    } catch { toast("Error.", "error"); }
   }
-
-  async function deleteAgent(id, name) {
-    if (!window.confirm(`Remove ${name}?`)) return;
-    try { await db.delete("agents", id); showToast("Removed", "error"); onRefresh(); } catch { showToast("Error", "error"); }
+  async function delAgent(id, name) {
+    if (!window.confirm(`Remove "${name}"?`)) return;
+    try { await db.remove("agents", id); toast("Removed.", "error"); onRefresh(); }
+    catch { toast("Error.", "error"); }
   }
+  function editAgent(a) { setASel(a); setAForm({ name: a.name, role: a.role || "Agent", phone_ext: a.phone_ext || "", pin: a.pin || "", status: a.status || "Active" }); setAModal("edit"); }
 
-  function handleFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
+  // CSV Import
+  function parseCSV(e) {
+    const file = e.target.files[0]; if (!file) return;
+    const r = new FileReader();
+    r.onload = ev => {
       const lines = ev.target.result.split("\n").filter(l => l.trim());
-      if (lines.length < 2) return;
-      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+      if (lines.length < 2) { toast("CSV empty.", "error"); return; }
+      const hdrs = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/"/g, ""));
       const data = lines.slice(1).map(line => {
-        const values = line.split(",").map(v => v.trim());
-        const obj = {}; headers.forEach((h, i) => obj[h] = values[i] || ""); return obj;
+        const vals = line.split(",").map(v => v.trim().replace(/"/g, ""));
+        const obj = {}; hdrs.forEach((h, i) => obj[h] = vals[i] || ""); return obj;
       });
-      setParsedCsv(data);
+      setCsv(data);
     };
-    reader.readAsText(file);
+    r.readAsText(file);
   }
 
-  async function executeImport() {
-    if (!importAgent || !importPromo || !parsedCsv.length) return;
+  async function doImport() {
+    if (!impAgent || !impPromo || !csv.length) return;
+    setImporting(true);
+    const now = new Date().toISOString();
     try {
-      await Promise.all(parsedCsv.map(row => db.insert("contacts", {
-        name: row.name || "Unknown", phone: row.phone || "", customer_type: row.customer_type || "", priority: row.priority || "",
-        category: "Business", dnc: false, assigned_agent: importAgent, assigned_promo: importPromo, lead_status: "Pending"
+      await Promise.all(csv.map(row => db.insert("contacts", {
+        name: row.name || "Unknown", phone: row.phone || "",
+        customer_type: row.customer_type || "", priority: row.priority || "",
+        category: "Business", dnc: false,
+        assigned_agent: impAgent, assigned_promo: impPromo,
+        lead_status: "Pending", assigned_at: now
       })));
-      showToast("Imported ✓"); setImportModal(false); setParsedCsv([]); onRefresh();
-    } catch { showToast("Error", "error"); }
+      toast(`✓ Imported ${csv.length} leads to ${impAgent}`);
+      setImpModal(false); setCsv([]); setIA(""); setIP(""); onRefresh();
+    } catch { toast("Import error.", "error"); }
+    finally { setImporting(false); }
   }
 
-  async function handleWipeAllPending() {
-    const pendingList = contacts.filter(c => c.assigned_promo === viewPromoDetails.name && c.assigned_agent === viewPromoAgent && c.lead_status === "Pending");
-    if (!window.confirm(`Wipe all ${pendingList.length} pending leads for ${viewPromoAgent}?`)) return;
-    try { await Promise.all(pendingList.map(c => db.delete("contacts", c.id))); showToast("Wiped."); onRefresh(); } catch { showToast("Error", "error"); }
-  }
-
-  async function handleWipeSelected() {
-    if (!window.confirm(`Delete ${selectedLeads.length} selected leads?`)) return;
-    try { await Promise.all(selectedLeads.map(id => db.delete("contacts", id))); showToast("Deleted."); setSelectedLeads([]); onRefresh(); } catch { showToast("Error", "error"); }
+  function Nav() {
+    return (
+      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 28 }}>
+          <div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
+          <span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span>
+          <Badge label="ADMIN" color={C.brand} />
+        </div>
+        <div style={{ display: "flex", gap: 0, flex: 1, overflowX: "auto" }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => { setTab(t.key); setCampDetail(null); setAgentInspect(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
+          <button onClick={onLogout} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>Logout</button>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 28 }}><div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div><span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span><Badge label="ADMIN" color={C.brand} /></div>
-        <div style={{ display: "flex", gap: 0, flex: 1 }}>{TABS.map(t => (<button key={t.key} onClick={() => handleTabChange(t.key)} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", cursor: "pointer", fontWeight: 600 }}>{t.label}</button>))}</div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <Btn onClick={onRefresh} color="#27272a" textColor={C.text}>🔄 Refresh</Btn>
-          <Btn onClick={() => setShowLogCall(true)} color={C.text} textColor={C.bg}>+ Log Call</Btn>
-          <button onClick={onLogout} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer" }}>Logout</button>
-        </div>
-      </div>
-
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
+      <Nav />
       <div style={{ padding: "32px 36px", maxWidth: 1280, margin: "0 auto" }}>
-        
+
         {/* ── DASHBOARD ── */}
         {tab === "dashboard" && (
           <div>
-            <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 24 }}>Command Center</div>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-              <StatCard label="Total Contacts" value={contacts.length} />
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Command Center</div>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
+              <StatCard label="Contacts" value={contacts.length} />
               <StatCard label="Total Calls" value={calls.length} accent={C.brand} />
               <StatCard label="Conversions" value={conversions} accent={C.green} />
               <StatCard label="Win Rate" value={convRate + "%"} accent={C.purple} />
+              <StatCard label="Callbacks" value={cbPending.length} accent={C.yellow} />
               <StatCard label="Active Campaigns" value={activePromos.length} accent="#f97316" />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+              <Card>
                 <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Outcome Distribution</div>
-                {outcomeCounts.length === 0 && <div style={{ color: C.muted, fontSize: 13 }}>No calls logged yet.</div>}
-                {outcomeCounts.map(o => (
+                {ocCounts.length === 0 && <div style={{ color: C.muted }}>No calls yet.</div>}
+                {ocCounts.map(o => (
                   <div key={o.name} style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
-                    <div style={{ width: 140, color: C.muted, fontSize: 12, flexShrink: 0 }}>{o.name}</div>
-                    <div style={{ flex: 1, background: C.bg, borderRadius: 999, height: 8, overflow: "hidden" }}><div style={{ width: `${(o.count / calls.length) * 100}%`, background: outcomeColor[o.name], height: "100%", borderRadius: 999 }} /></div>
+                    <div style={{ width: 140, color: C.muted, fontSize: 12 }}>{o.name}</div>
+                    <div style={{ flex: 1 }}><ProgBar value={(o.count / calls.length) * 100} color={OC[o.name]} /></div>
                     <div style={{ color: C.text, fontSize: 13, fontWeight: 600, width: 28, textAlign: "right" }}>{o.count}</div>
                   </div>
                 ))}
-              </div>
-              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Global Leaderboard</div>
-                {agentStats.map((a, i) => {
+              </Card>
+              <Card>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Agent Leaderboard</div>
+                {agStats.map((a, i) => {
                   const rate = a.total ? Math.round((a.converted / a.total) * 100) : 0;
                   return (
                     <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
                       <div style={{ color: i === 0 ? C.brand : C.subtle, fontWeight: 800, fontSize: 15, width: 24 }}>#{i + 1}</div>
-                      <Avatar name={a.name} />
-                      <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{a.name}</div><div style={{ color: C.muted, fontSize: 11 }}>{a.total} calls · {rate}% win rate</div></div>
+                      <Av name={a.name} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{a.name}</div>
+                        <div style={{ color: C.muted, fontSize: 11 }}>{a.total} calls · {rate}% win</div>
+                      </div>
                       <Badge label={`${a.converted} wins`} color={C.green} />
+                    </div>
+                  );
+                })}
+              </Card>
+            </div>
+
+            {cbPending.length > 0 && (
+              <div style={{ background: C.card, border: `1px solid ${C.yellow}33`, borderLeft: `4px solid ${C.yellow}`, borderRadius: 12, padding: 20 }}>
+                <div style={{ color: C.yellow, fontWeight: 700, fontSize: 14, marginBottom: 14 }}>🔔 {cbPending.length} Pending Callback{cbPending.length !== 1 ? "s" : ""}</div>
+                {cbPending.slice(0, 4).map(c => (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 0", borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
+                    <span style={{ color: C.yellow, fontWeight: 600, minWidth: 96 }}>{c.callback_date}</span>
+                    <span style={{ fontWeight: 600 }}>{c.contact_name}</span>
+                    <span style={{ color: C.muted }}>→</span>
+                    <span style={{ color: C.brand, fontWeight: 600 }}>{c.agent_name}</span>
+                    <span style={{ color: C.subtle, flex: 1 }}>{c.promo_name}</span>
+                    <button onClick={() => setTab("callbacks")} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, padding: "4px 12px", fontSize: 11, cursor: "pointer" }}>View All</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── CAMPAIGNS ── */}
+        {tab === "campaigns" && (
+          campDetail ? (
+            <CampaignDetail campaign={campDetail} contacts={contacts} calls={calls} agents={agents} onBack={() => setCampDetail(null)} onRefresh={onRefresh} toast={toast} />
+          ) : (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 22, fontWeight: 800 }}>Campaign Management</div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <Btn onClick={() => setImpModal(true)} color="#052e16" textColor={C.green} outline>📥 Import Leads</Btn>
+                  <Btn onClick={() => { setPSel(null); setPForm({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" }); setPModal("add"); }}>+ New Campaign</Btn>
+                </div>
+              </div>
+              <div style={{ color: C.muted, fontSize: 13, marginBottom: 24 }}>Click a card to see agent breakdown and manage leads</div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 20 }}>
+                {promos.map(p => {
+                  const pc = calls.filter(c => c.promo_name === p.name).length;
+                  const cv = calls.filter(c => c.promo_name === p.name && c.outcome === "Converted").length;
+                  const rt = pc ? Math.round((cv / pc) * 100) : 0;
+                  const asgd = contacts.filter(c => c.assigned_promo === p.name);
+                  const ctd = asgd.filter(c => c.lead_status === "Contacted");
+                  const pend = asgd.filter(c => c.lead_status === "Pending");
+                  const prog = asgd.length ? Math.round((ctd.length / asgd.length) * 100) : 0;
+                  const campAgents = [...new Set(asgd.map(c => c.assigned_agent).filter(Boolean))];
+
+                  return (
+                    <div key={p.id} style={{ background: C.card, border: `1px solid ${p.status === "Active" ? C.green + "44" : C.border}`, borderRadius: 12, overflow: "hidden", transition: "transform .15s, border-color .15s", cursor: "default" }}
+                      onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
+                      onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
+
+                      <div onClick={() => setCampDetail(p)} style={{ padding: 22, cursor: "pointer" }}>
+                        {p.status === "Active" && <div style={{ height: 3, background: C.green, margin: "-22px -22px 18px" }} />}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                          <div style={{ fontWeight: 700, fontSize: 15, flex: 1, marginRight: 10 }}>{p.name}</div>
+                          <Badge label={p.status} color={p.status === "Active" ? C.green : C.subtle} />
+                        </div>
+                        {p.description && <div style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>{p.description}</div>}
+
+                        {campAgents.length > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14 }}>
+                            <span style={{ color: C.muted, fontSize: 11, fontWeight: 600 }}>AGENTS:</span>
+                            {campAgents.slice(0, 5).map(n => (
+                              <div key={n} title={n} style={{ background: C.brand + "33", border: `2px solid ${C.brand}`, borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: C.brand }}>{n[0]}</div>
+                            ))}
+                            {campAgents.length > 5 && <span style={{ color: C.muted, fontSize: 12 }}>+{campAgents.length - 5}</span>}
+                          </div>
+                        )}
+
+                        {asgd.length > 0 && (
+                          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                              <span style={{ fontWeight: 600 }}>Lead Progress</span>
+                              <span style={{ color: C.text, fontWeight: 700 }}>{ctd.length}/{asgd.length}</span>
+                            </div>
+                            <ProgBar value={prog} />
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 10, color: C.muted, fontWeight: 700 }}>
+                              <span>{prog}% contacted</span>
+                              <span style={{ color: C.yellow }}>{pend.length} pending</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
+                          {[["CALLS", pc, C.yellow], ["CONVERTED", cv, C.green], ["WIN RATE", rt + "%", C.purple]].map(([l, v, c]) => (
+                            <div key={l} style={{ textAlign: "center" }}>
+                              <div style={{ color: c, fontWeight: 800, fontSize: 22, lineHeight: 1 }}>{v}</div>
+                              <div style={{ color: C.muted, fontSize: 10, fontWeight: 600, marginTop: 4 }}>{l}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{ color: C.brand, fontSize: 12, fontWeight: 700, textAlign: "center", marginTop: 12, padding: "6px", background: C.brand + "11", borderRadius: 6 }}>
+                          Click to view agent breakdown →
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", borderTop: `1px solid ${C.border}` }}>
+                        <button onClick={e => { e.stopPropagation(); editPromo(p); }} style={{ flex: 1, background: "#27272a", border: "none", color: C.text, padding: 10, cursor: "pointer", fontSize: 12, fontWeight: 600, borderRight: `1px solid ${C.border}` }}>Edit</button>
+                        <button onClick={e => { e.stopPropagation(); delPromo(p.id, p.name); }} style={{ flex: 1, background: C.red + "18", border: "none", color: C.red, padding: 10, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete</button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
-
-            {/* Global Campaign Performance Table */}
-            <div style={{ fontWeight: 700, fontSize: 16, marginTop: 24, marginBottom: 14 }}>Campaign Performance</div>
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead><tr>{["Campaign", "Total Leads", "Pitched", "Conversions", "Win Rate", "Status"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {promos.map(p => {
-                    const pLeads = contacts.filter(c => c.assigned_promo === p.name).length;
-                    const pCalls = calls.filter(c => c.promo_name === p.name).length;
-                    const pConv = calls.filter(c => c.promo_name === p.name && c.outcome === "Converted").length;
-                    const pRate = pCalls ? Math.round((pConv / pCalls) * 100) : 0;
-                    return (
-                      <tr key={p.id}>
-                        <td style={{ ...S.td, fontWeight: 600 }}>{p.name}</td>
-                        <td style={S.td}>{pLeads}</td>
-                        <td style={S.td}>{pCalls}</td>
-                        <td style={{ ...S.td, color: C.green, fontWeight: 600 }}>{pConv}</td>
-                        <td style={{ ...S.td, color: C.purple, fontWeight: 600 }}>{pRate}%</td>
-                        <td style={S.td}><Badge label={p.status} color={p.status === "Active" ? C.green : C.muted} /></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          )
         )}
 
-        {tab === "calls" && (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}><div style={{ fontSize: 22, fontWeight: 800 }}>Master Call Logs</div><Btn onClick={() => exportToCSV(calls, "calls.csv")} color="#27272a" textColor={C.text}>Export</Btn></div>
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr>{["Contact", "Date", "Agent", "Campaign", "Outcome", "Notes"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead><tbody>{calls.map(c => <tr key={c.id}><td style={S.td}>{c.contact_name}</td><td style={S.td}>{c.call_date}</td><td style={S.td}>{c.agent_name}</td><td style={S.td}>{c.promo_name}</td><td style={S.td}>{c.outcome}</td><td style={S.td}>{c.notes}</td></tr>)}</tbody></table>
-            </div>
-          </div>
-        )}
-
-        {/* ── CAMPAIGNS (DRILL-DOWN) ── */}
-        {tab === "campaigns" && (
-          <div>
-            {!viewPromoDetails ? (
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                  <div style={{ fontSize: 22, fontWeight: 800 }}>Campaigns</div>
-                  <div style={{ display: "flex", gap: 10 }}><Btn onClick={() => setImportModal(true)} color="#052e16" textColor={C.green}>📥 Import Leads</Btn><Btn onClick={() => { setSelectedPromo(null); setPromoForm({ name: "", description: "", status: "Active", start_date: "", end_date: "", target_audience: "All" }); setPromoModal("add"); }}>+ New Campaign</Btn></div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
-                  {promos.map(p => {
-                    const assigned = contacts.filter(c => c.assigned_promo === p.name);
-                    const contacted = assigned.filter(c => c.lead_status === "Contacted");
-                    const progress = assigned.length ? Math.round((contacted.length / assigned.length) * 100) : 0;
-                    return (
-                      <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}><div style={{ fontWeight: 700, fontSize: 16 }}>{p.name}</div><Badge label={p.status} color={p.status === "Active" ? C.green : C.muted} /></div>
-                        {assigned.length > 0 && (
-                          <div style={{ background: C.bg, borderRadius: 8, padding: 10, marginBottom: 16 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, marginBottom: 6 }}><span>Progress</span><span>{contacted.length}/{assigned.length}</span></div>
-                            <div style={{ background: "#27272a", height: 6, borderRadius: 99 }}><div style={{ width: `${progress}%`, height: "100%", background: C.brand, borderRadius: 99 }} /></div>
-                          </div>
-                        )}
-                        <Btn onClick={() => setViewPromoDetails(p)} style={{ width: "100%", marginTop: 10 }} color="#27272a" textColor={C.text}>Manage Campaign ➔</Btn>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : !viewPromoAgent ? (
-              // Level 2: Campaign Details (Leaderboard Style + Undo Last Hour)
-              <div>
-                <button onClick={() => setViewPromoDetails(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "6px 12px", marginBottom: 20, cursor: "pointer" }}>← Back</button>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
-                  <div>
-                    <div style={{ fontSize: 26, fontWeight: 800 }}>{viewPromoDetails.name}</div>
-                    <div style={{ color: C.muted, fontSize: 14 }}>{viewPromoDetails.description || "No description provided."}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Btn onClick={undoLastHourUpload} color={C.yellow + "22"} textColor={C.yellow} style={{ border: `1px solid ${C.yellow}44` }}>↩ Undo Last Hour Upload</Btn>
-                    <Btn onClick={() => { setImportPromo(viewPromoDetails.name); setImportModal(true); }} color="#052e16" textColor={C.green} style={{ border: `1px solid ${C.green}44` }}>📥 Assign Leads</Btn>
-                    <Btn onClick={() => { setSelectedPromo(viewPromoDetails); setPromoForm(viewPromoDetails); setPromoModal("edit"); }} color="#27272a" textColor={C.text}>Edit</Btn>
-                    <Btn onClick={() => deletePromoCascade(viewPromoDetails.id, viewPromoDetails.name)} color={C.red + "22"} textColor={C.red}>Delete</Btn>
-                  </div>
-                </div>
-
-                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Campaign Leaderboard & Queue</div>
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead><tr>{["Agent", "Assigned", "Pitched", "Conversions", "Win Rate", "Pending Queue", "Action"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {agents.filter(a => a.role !== "admin").map(agent => {
-                        const promoLeads = contacts.filter(c => c.assigned_promo === viewPromoDetails.name && c.assigned_agent === agent.name);
-                        const promoCalls = calls.filter(c => c.promo_name === viewPromoDetails.name && c.agent_name === agent.name);
-                        
-                        if (promoLeads.length === 0 && promoCalls.length === 0) return null;
-
-                        const pitched = promoCalls.length;
-                        const conv = promoCalls.filter(c => c.outcome === "Converted").length;
-                        const rate = pitched ? Math.round((conv / pitched) * 100) : 0;
-                        const pending = promoLeads.filter(c => c.lead_status === "Pending").length;
-
-                        return (
-                          <tr key={agent.id}>
-                            <td style={S.td}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar name={agent.name} /> <span style={{ fontWeight: 600 }}>{agent.name}</span></div></td>
-                            <td style={S.td}>{promoLeads.length}</td>
-                            <td style={S.td}>{pitched}</td>
-                            <td style={{ ...S.td, color: C.green, fontWeight: 600 }}>{conv}</td>
-                            <td style={{ ...S.td, color: C.purple, fontWeight: 600 }}>{rate}%</td>
-                            <td style={{ ...S.td, color: C.yellow, fontWeight: 600 }}>{pending}</td>
-                            <td style={S.td}><Btn onClick={() => setViewPromoAgent(agent.name)} color={C.brand + "22"} textColor={C.brand}>Clean Queue</Btn></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <button onClick={() => { setViewPromoAgent(null); setSelectedLeads([]); }} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "6px 12px", marginBottom: 20, cursor: "pointer" }}>← Back</button>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
-                  <div style={{ fontSize: 22, fontWeight: 800 }}>{viewPromoAgent}'s Queue ({viewPromoDetails.name})</div>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    {selectedLeads.length > 0 && <Btn onClick={handleWipeSelected} color={C.red + "22"} textColor={C.red}>Delete Selected</Btn>}
-                    <Btn onClick={handleWipeAllPending} color={C.red} textColor={C.text}>⚠️ Wipe All Pending</Btn>
-                  </div>
-                </div>
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead><tr><th style={S.th}></th>{["Name", "Phone", "Cust Type", "Status"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {contacts.filter(c => c.assigned_promo === viewPromoDetails.name && c.assigned_agent === viewPromoAgent).map(lead => (
-                        <tr key={lead.id}>
-                          <td style={S.td}>{lead.lead_status === "Pending" && <input type="checkbox" checked={selectedLeads.includes(lead.id)} onChange={e => { if (e.target.checked) setSelectedLeads([...selectedLeads, lead.id]); else setSelectedLeads(selectedLeads.filter(id => id !== lead.id)); }} />}</td>
-                          <td style={S.td}>{lead.name}</td><td style={S.td}>{lead.phone}</td><td style={S.td}>{lead.customer_type}</td><td style={S.td}>{lead.lead_status}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── AGENTS ── */}
+        {/* ── TEAM ── */}
         {tab === "agents" && (
           <div>
-            {!viewAgent ? (
+            {!agentInspect ? (
               <div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}><div style={{ fontSize: 22, fontWeight: 800 }}>Team</div><Btn onClick={() => { setSelectedAgentModal(null); setAgentForm({ name: "", role: "Agent", phone_ext: "", pin: "", status: "Active" }); setAgentModal("add"); }}>+ Add Agent</Btn></div>
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead><tr>{["Agent", "Role", "PIN", "Calls", "Wins", "Actions"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {agentStats.map(a => (
-                        <tr key={a.id}>
-                          <td style={S.td}>{a.name}</td><td style={S.td}>{a.role}</td><td style={S.td}>{a.pin}</td><td style={S.td}>{a.total}</td><td style={S.td}>{a.converted}</td>
-                          <td style={S.td}><Btn onClick={() => setViewAgent(a)} color={C.brand + "22"} textColor={C.brand} style={{ marginRight: 8 }}>Inspect</Btn> <Btn onClick={() => { setSelectedAgentModal(a); setAgentForm(a); setAgentModal("edit"); }} color="#27272a" textColor={C.text}>Edit</Btn> <Btn onClick={() => deleteAgent(a.id, a.name)} color={C.red + "22"} textColor={C.red} style={{ marginLeft: 8 }}>Remove</Btn></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>Team Management</div>
+                  <Btn onClick={() => { setASel(null); setAForm({ name: "", role: "Agent", phone_ext: "", pin: "", status: "Active" }); setAModal("add"); }}>+ Add Agent</Btn>
                 </div>
-              </div>
-            ) : (
-              // ── AGENT DRILL DOWN ──
-              <div>
-                <button onClick={() => setViewAgent(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Team</button>
-                <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 28 }}>
-                  <Avatar name={viewAgent.name} size={60} />
-                  <div>
-                    <div style={{ fontSize: 26, fontWeight: 800 }}>{viewAgent.name}</div>
-                    <div style={{ color: C.muted, fontSize: 14 }}>{viewAgent.role} · Supervisory View</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 28 }}>
-                  <StatCard label="Total Calls" value={calls.filter(c => c.agent_name === viewAgent.name).length} />
-                  <StatCard label="Conversions" value={calls.filter(c => c.agent_name === viewAgent.name && c.outcome === "Converted").length} accent={C.green} />
-                  <StatCard label="Pending Callbacks" value={calls.filter(c => c.agent_name === viewAgent.name && c.callback_date && !c.callback_done).length} accent={C.yellow} />
-                  <StatCard label="Assigned Leads" value={contacts.filter(c => c.assigned_agent === viewAgent.name && c.lead_status !== "Contacted").length} accent={C.purple} />
-                </div>
-
-                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>Campaign Breakdown</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, marginBottom: 28 }}>
-                  {promos.map(p => {
-                    const aCalls = calls.filter(c => c.agent_name === viewAgent.name && c.promo_name === p.name);
-                    const aLeads = contacts.filter(c => c.assigned_agent === viewAgent.name && c.assigned_promo === p.name);
-                    if (aCalls.length === 0 && aLeads.length === 0) return null;
-
-                    const aConv = aCalls.filter(c => c.outcome === "Converted").length;
-                    const aRate = aCalls.length ? Math.round((aConv / aCalls.length) * 100) : 0;
-                    const aPend = aLeads.filter(c => c.lead_status === "Pending").length;
-
+                <DataTable headers={["Agent", "Role", "PIN", "Calls", "Conversions", "Win Rate", "Status", "Actions"]}>
+                  {agStats.map(a => {
+                    const rate = a.total ? Math.round((a.converted / a.total) * 100) : 0;
                     return (
-                      <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
-                        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, color: C.brand }}>{p.name}</div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: C.muted }}>Assigned Leads:</span> <span>{aLeads.length} ({aPend} pending)</span></div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: C.muted }}>Calls Made:</span> <span>{aCalls.length}</span></div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}><span style={{ color: C.muted }}>Conversions:</span> <span style={{ color: C.green, fontWeight: 600 }}>{aConv}</span></div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Win Rate:</span> <span style={{ color: C.purple, fontWeight: 600 }}>{aRate}%</span></div>
-                      </div>
+                      <TR key={a.id}>
+                        <td style={S.td}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><Av name={a.name} /><div><div style={{ fontWeight: 600 }}>{a.name}</div><div style={{ color: C.muted, fontSize: 11 }}>Ext: {a.phone_ext || "—"}</div></div></div></td>
+                        <td style={{ ...S.td, color: C.muted }}>{a.role}</td>
+                        <td style={{ ...S.td, fontFamily: "monospace", letterSpacing: 2, color: C.subtle }}>{a.pin || "—"}</td>
+                        <td style={{ ...S.td, textAlign: "center", fontWeight: 600 }}>{a.total}</td>
+                        <td style={{ ...S.td, textAlign: "center", color: C.green, fontWeight: 600 }}>{a.converted}</td>
+                        <td style={{ ...S.td, textAlign: "center", color: C.purple, fontWeight: 600 }}>{rate}%</td>
+                        <td style={S.td}><Badge label={a.status} color={a.status === "Active" ? C.green : C.yellow} /></td>
+                        <td style={S.td}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => setAgentInspect(a)} style={{ background: C.brand + "22", border: `1px solid ${C.brand}33`, color: C.brand, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Inspect</button>
+                            <button onClick={() => editAgent(a)} style={{ background: "#27272a", border: "none", color: C.text, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Edit</button>
+                            <button onClick={() => delAgent(a.id, a.name)} style={{ background: C.red + "18", border: `1px solid ${C.red}33`, color: C.red, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Remove</button>
+                          </div>
+                        </td>
+                      </TR>
                     );
                   })}
-                </div>
-
-                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>Call History</div>
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead><tr>{["Contact", "Date", "Campaign", "Duration", "Outcome", "Interest", "Notes"].map(h => <th key={h} style={S.th}>{h}</th>)}</tr></thead>
-                      <tbody>
-                        {calls.filter(c => c.agent_name === viewAgent.name).length === 0
-                          ? <tr><td colSpan={7} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls logged by this agent.</td></tr>
-                          : calls.filter(c => c.agent_name === viewAgent.name).map(c => (
-                            <tr key={c.id}>
-                              <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
-                              <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
-                              <td style={S.td}>{c.promo_name}</td>
-                              <td style={{ ...S.td, color: C.muted, textAlign: "center" }}>{c.duration_minutes ? c.duration_minutes + "m" : "—"}</td>
-                              <td style={S.td}><Badge label={c.outcome} color={outcomeColor[c.outcome] || C.muted} /></td>
-                              <td style={S.td}><Badge label={c.interest_level} color={c.interest_level === "High" ? C.green : c.interest_level === "Medium" ? C.yellow : C.muted} /></td>
-                              <td style={{ ...S.td, color: C.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
-                            </tr>
-                          ))
-                        }
-                      </tbody>
-                    </table>
+                </DataTable>
+              </div>
+            ) : (
+              // Agent Inspect — workload by campaign
+              <div>
+                <button onClick={() => setAgentInspect(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Team</button>
+                <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 28 }}>
+                  <Av name={agentInspect.name} size={60} />
+                  <div>
+                    <div style={{ fontSize: 26, fontWeight: 800 }}>{agentInspect.name}</div>
+                    <div style={{ color: C.muted, fontSize: 14 }}>{agentInspect.role} · Supervisory View</div>
                   </div>
                 </div>
+
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
+                  <StatCard label="Total Calls" value={calls.filter(c => c.agent_name === agentInspect.name).length} />
+                  <StatCard label="Conversions" value={calls.filter(c => c.agent_name === agentInspect.name && c.outcome === "Converted").length} accent={C.green} />
+                  <StatCard label="Pending CBs" value={calls.filter(c => c.agent_name === agentInspect.name && c.callback_date && !c.callback_done).length} accent={C.yellow} />
+                  <StatCard label="Assigned Leads" value={contacts.filter(c => c.assigned_agent === agentInspect.name).length} accent={C.purple} />
+                </div>
+
+                <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 16 }}>Workload by Campaign</div>
+                {promos.map(p => {
+                  const al = contacts.filter(c => c.assigned_agent === agentInspect.name && c.assigned_promo === p.name);
+                  if (!al.length) return null;
+                  const pnd = al.filter(l => l.lead_status === "Pending");
+                  const ctd = al.filter(l => l.lead_status === "Contacted");
+                  const acl = calls.filter(c => c.agent_name === agentInspect.name && c.promo_name === p.name);
+                  const prog = al.length ? Math.round((ctd.length / al.length) * 100) : 0;
+
+                  return (
+                    <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 20px", marginBottom: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name}</div>
+                          <div style={{ color: C.muted, fontSize: 12 }}>{al.length} leads assigned</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 20 }}>
+                          {[["Pending", pnd.length, C.yellow], ["Contacted", ctd.length, C.green], ["Calls", acl.length, C.brand]].map(([l, v, c]) => (
+                            <div key={l} style={{ textAlign: "center" }}>
+                              <div style={{ color: c, fontWeight: 800, fontSize: 18 }}>{v}</div>
+                              <div style={{ color: C.muted, fontSize: 10, fontWeight: 600 }}>{l.toUpperCase()}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={() => { setCampDetail(p); setAgentInspect(null); setTab("campaigns"); }} style={{ background: C.brand + "22", border: `1px solid ${C.brand}33`, color: C.brand, borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>View Leads →</button>
+                      </div>
+                      <ProgBar value={prog} />
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>{prog}% contacted</div>
+                    </div>
+                  );
+                })}
+
+                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14, marginTop: 32 }}>Full Call History</div>
+                <DataTable headers={["Contact", "Date", "Campaign", "Duration", "Outcome", "Interest", "Notes"]}>
+                  {calls.filter(c => c.agent_name === agentInspect.name).length === 0
+                    ? <tr><td colSpan={7} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls logged.</td></tr>
+                    : calls.filter(c => c.agent_name === agentInspect.name).map(c => (
+                      <TR key={c.id}>
+                        <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
+                        <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
+                        <td style={S.td}>{c.promo_name}</td>
+                        <td style={{ ...S.td, color: C.muted, textAlign: "center" }}>{c.duration_minutes ? c.duration_minutes + "m" : "—"}</td>
+                        <td style={S.td}><Badge label={c.outcome} color={OC[c.outcome] || C.muted} /></td>
+                        <td style={S.td}><Badge label={c.interest_level} color={c.interest_level === "High" ? C.green : c.interest_level === "Medium" ? C.yellow : C.muted} /></td>
+                        <td style={{ ...S.td, color: C.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
+                      </TR>
+                    ))}
+                </DataTable>
               </div>
             )}
           </div>
         )}
+
+        {/* ── CALL LOGS ── */}
+        {tab === "calls" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>Master Call Log</div>
+              <Btn color="#27272a" textColor={C.text} onClick={() => exportCSV(filteredCalls.map(c => ({ date: c.call_date, time: c.call_time, contact: c.contact_name, agent: c.agent_name, campaign: c.promo_name, duration: c.duration_minutes, outcome: c.outcome, interest: c.interest_level, callback: c.callback_date, notes: c.notes })), "call_logs.csv")}>⬇ Export CSV</Btn>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14, background: C.card, padding: "16px 20px", borderRadius: 12, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+              <div><label style={S.lbl}>Search</label><input value={fSearch} onChange={e => setFS(e.target.value)} placeholder="Contact or notes..." style={S.inp} /></div>
+              <div><label style={S.lbl}>Agent</label><select value={fAgent} onChange={e => setFA(e.target.value)} style={S.inp}><option value="">All Agents</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select></div>
+              <div><label style={S.lbl}>Campaign</label><select value={fPromo} onChange={e => setFP(e.target.value)} style={S.inp}><option value="">All Campaigns</option>{promos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}</select></div>
+              <div><label style={S.lbl}>Outcome</label><select value={fOutcome} onChange={e => setFO(e.target.value)} style={S.inp}><option value="">All Outcomes</option>{Object.keys(OC).map(o => <option key={o} value={o}>{o}</option>)}</select></div>
+            </div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>Showing {filteredCalls.length} of {calls.length}</div>
+            <DataTable headers={["Contact", "Date & Time", "Agent", "Campaign", "Mins", "Outcome", "Callback", "Notes"]}>
+              {filteredCalls.length === 0 && <tr><td colSpan={8} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 60 }}>No calls match these filters.</td></tr>}
+              {filteredCalls.map(c => (
+                <TR key={c.id}>
+                  <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
+                  <td style={{ ...S.td, color: C.muted, whiteSpace: "nowrap" }}>{c.call_date} {c.call_time?.slice(0, 5)}</td>
+                  <td style={S.td}><Badge label={c.agent_name} color={C.brand} /></td>
+                  <td style={S.td}>{c.promo_name}</td>
+                  <td style={{ ...S.td, color: C.muted, textAlign: "center" }}>{c.duration_minutes ? c.duration_minutes + "m" : "—"}</td>
+                  <td style={S.td}><Badge label={c.outcome} color={OC[c.outcome] || C.muted} /></td>
+                  <td style={{ ...S.td, whiteSpace: "nowrap" }}>
+                    {c.callback_date ? <span style={{ color: c.callback_done ? C.green : C.yellow, fontWeight: 600 }}>{c.callback_date} {c.callback_done ? "✓" : "⏳"}</span> : <span style={{ color: C.border }}>—</span>}
+                  </td>
+                  <td style={{ ...S.td, color: C.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
+                </TR>
+              ))}
+            </DataTable>
+          </div>
+        )}
+
+        {tab === "callbacks" && <CallbacksTab calls={calls} isAdmin onRefresh={onRefresh} toast={toast} />}
+        {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin />}
       </div>
 
-      {/* ── MODALS ── */}
-
-      {promoModal && (
-        <Modal title={selectedPromo ? "Edit Campaign" : "New Campaign"} onClose={() => setPromoModal(null)}>
-          <div style={{ display: "grid", gap: 16 }}>
-            <div><label style={S.lbl}>Name *</label><input value={promoForm.name} onChange={e => setPromoForm({ ...promoForm, name: e.target.value })} style={S.inp} /></div>
-            <div><label style={S.lbl}>Description</label><input value={promoForm.description} onChange={e => setPromoForm({ ...promoForm, description: e.target.value })} style={S.inp} /></div>
-            <div><label style={S.lbl}>Status</label><select value={promoForm.status} onChange={e => setPromoForm({ ...promoForm, status: e.target.value })} style={S.inp}><option>Active</option><option>Expired</option></select></div>
-            <Btn onClick={savePromo} disabled={!promoForm.name} style={{ marginTop: 10 }}>Save Campaign</Btn>
+      {/* ── PROMO MODAL ── */}
+      {pModal && (
+        <Modal title={pModal === "edit" ? "Edit Campaign" : "New Campaign"} onClose={() => { setPModal(null); setPSel(null); }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div><label style={S.lbl}>Name *</label><input value={pForm.name} onChange={e => setPForm(p => ({ ...p, name: e.target.value }))} style={S.inp} /></div>
+            <div><label style={S.lbl}>Description</label><input value={pForm.description} onChange={e => setPForm(p => ({ ...p, description: e.target.value }))} style={S.inp} /></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div><label style={S.lbl}>Start Date</label><input type="date" value={pForm.start_date} onChange={e => setPForm(p => ({ ...p, start_date: e.target.value }))} style={S.inp} /></div>
+              <div><label style={S.lbl}>End Date</label><input type="date" value={pForm.end_date} onChange={e => setPForm(p => ({ ...p, end_date: e.target.value }))} style={S.inp} /></div>
+              <div><label style={S.lbl}>Status</label><select value={pForm.status} onChange={e => setPForm(p => ({ ...p, status: e.target.value }))} style={S.inp}><option>Active</option><option>Expired</option><option>Paused</option></select></div>
+              <div><label style={S.lbl}>Target Audience</label><input value={pForm.target_audience} onChange={e => setPForm(p => ({ ...p, target_audience: e.target.value }))} style={S.inp} /></div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+            <Btn onClick={savePromo} disabled={!pForm.name} style={{ flex: 1, padding: 12 }}>Save Campaign</Btn>
+            <Btn onClick={() => { setPModal(null); setPSel(null); }} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
           </div>
         </Modal>
       )}
 
-      {agentModal && (
-        <Modal title={selectedAgentModal ? "Edit Agent" : "Add Agent"} onClose={() => setAgentModal(null)}>
-          <div style={{ display: "grid", gap: 16 }}>
-            <div><label style={S.lbl}>Name *</label><input value={agentForm.name} onChange={e => setAgentForm({ ...agentForm, name: e.target.value })} style={S.inp} /></div>
-            <div><label style={S.lbl}>PIN *</label><input type="password" value={agentForm.pin} onChange={e => setAgentForm({ ...agentForm, pin: e.target.value })} style={S.inp} /></div>
-            <div><label style={S.lbl}>Role</label><select value={agentForm.role} onChange={e => setAgentForm({ ...agentForm, role: e.target.value })} style={S.inp}><option>Agent</option><option>Team Lead</option></select></div>
-            <Btn onClick={saveAgent} disabled={!agentForm.name || !agentForm.pin} style={{ marginTop: 10 }}>Save Agent</Btn>
+      {/* ── AGENT MODAL ── */}
+      {aModal && (
+        <Modal title={aModal === "edit" ? "Edit Agent" : "Add Agent"} onClose={() => { setAModal(null); setASel(null); }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+            <div><label style={S.lbl}>Full Name *</label><input value={aForm.name} onChange={e => setAForm(p => ({ ...p, name: e.target.value }))} style={S.inp} /></div>
+            <div><label style={S.lbl}>Role</label><select value={aForm.role} onChange={e => setAForm(p => ({ ...p, role: e.target.value }))} style={S.inp}><option>Agent</option><option>Senior Agent</option><option>Junior Agent</option><option>Team Lead</option></select></div>
+            <div><label style={S.lbl}>Login PIN *</label><input type="password" maxLength={6} value={aForm.pin} onChange={e => setAForm(p => ({ ...p, pin: e.target.value }))} style={S.inp} placeholder="e.g. 1234" /></div>
+            <div><label style={S.lbl}>Phone Ext</label><input value={aForm.phone_ext} onChange={e => setAForm(p => ({ ...p, phone_ext: e.target.value }))} style={S.inp} /></div>
+            <div><label style={S.lbl}>Status</label><select value={aForm.status} onChange={e => setAForm(p => ({ ...p, status: e.target.value }))} style={S.inp}><option>Active</option><option>On Leave</option><option>Inactive</option></select></div>
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+            <Btn onClick={saveAgent} disabled={!aForm.name || !aForm.pin} style={{ flex: 1, padding: 12 }}>{aModal === "edit" ? "Save Changes" : "Add Agent"}</Btn>
+            <Btn onClick={() => { setAModal(null); setASel(null); }} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
           </div>
         </Modal>
       )}
 
-      {importModal && (
-        <Modal title="Import Leads" onClose={() => setImportModal(false)}>
-          <div style={{ display: "grid", gap: 16 }}>
-            <div style={{ background: "#1c1200", color: C.yellow, padding: 12, borderRadius: 8, fontSize: 13 }}>Upload CSV with headers: <code style={{ color: "#fff" }}>name, phone, customer_type, priority</code></div>
-            <div><label style={S.lbl}>Campaign</label><select value={importPromo} onChange={e => setImportPromo(e.target.value)} style={S.inp}><option value="">Select...</option>{activePromos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}</select></div>
-            <div><label style={S.lbl}>Agent</label><select value={importAgent} onChange={e => setImportAgent(e.target.value)} style={S.inp}><option value="">Select...</option>{agents.filter(a => a.status === "Active" && a.role !== "admin").map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select></div>
-            <div><label style={S.lbl}>File</label><input type="file" accept=".csv" onChange={handleFileUpload} style={{ ...S.inp, padding: 8 }} /></div>
-            {parsedCsv.length > 0 && <div style={{ color: C.green }}>✓ {parsedCsv.length} leads ready</div>}
-            <Btn onClick={executeImport} disabled={importing || !parsedCsv.length || !importAgent || !importPromo} style={{ marginTop: 10 }}>Import</Btn>
+      {/* ── IMPORT MODAL ── */}
+      {impModal && (
+        <Modal title="📥 Import & Assign Leads" onClose={() => { setImpModal(false); setCsv([]); }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ background: "#1c1200", border: `1px solid ${C.yellow}33`, borderRadius: 8, padding: 14, color: C.yellow, fontSize: 13, lineHeight: 1.6 }}>
+              CSV headers: <code style={{ color: C.text }}>name, phone, customer_type, priority</code>
+            </div>
+            <div><label style={S.lbl}>1. Campaign</label><select value={impPromo} onChange={e => setIP(e.target.value)} style={S.inp}><option value="">Select...</option>{activePromos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}</select></div>
+            <div><label style={S.lbl}>2. Agent</label><select value={impAgent} onChange={e => setIA(e.target.value)} style={S.inp}><option value="">Select...</option>{agents.filter(a => a.status === "Active").map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select></div>
+            <div><label style={S.lbl}>3. Upload CSV</label><input type="file" accept=".csv" onChange={parseCSV} style={{ ...S.inp, padding: 10 }} /></div>
+            {csv.length > 0 && <div style={{ background: "#052e16", border: `1px solid ${C.green}44`, color: C.green, padding: 12, borderRadius: 8, fontWeight: 600, textAlign: "center" }}>✓ {csv.length} leads parsed</div>}
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+            <Btn onClick={doImport} disabled={importing || !csv.length || !impAgent || !impPromo} style={{ flex: 1, padding: 12 }}>{importing ? "Importing..." : `Import ${csv.length || ""} Leads`}</Btn>
+            <Btn onClick={() => { setImpModal(false); setCsv([]); }} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
           </div>
         </Modal>
       )}
 
-      {showLogCall && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={null} onClose={() => setShowLogCall(false)} onSaved={onRefresh} showToast={showToast} />}
+      {logOpen && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={null} prefill={null} onClose={() => setLogOpen(false)} onDone={onRefresh} toast={toast} />}
     </div>
   );
 }
 
-// ════════════════════════════════════════════════════════════
-// ROOT APP
-// ════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// ROOT
+// ═══════════════════════════════════════════════════════════
 export default function App() {
   const [user, setUser] = useState(null);
-  const [data, setData] = useState({ contacts: [], calls: [], agents: [], promos: [] });
+  const [d, setD] = useState({ contacts: [], calls: [], agents: [], promos: [] });
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState(null);
+  const [toastState, setToastState] = useState(null);
 
-  function showToast(msg, type = "success") {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
+  function toast(msg, type = "success") {
+    setToastState({ msg, type });
+    setTimeout(() => setToastState(null), 3500);
   }
 
-  const loadAll = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const [contacts, calls, agents, promos] = await Promise.all([
         db.get("contacts"), db.get("call_logs"), db.get("agents", "name"), db.get("promotions")
       ]);
-      setData({
+      setD({
         contacts: Array.isArray(contacts) ? contacts : [],
         calls: Array.isArray(calls) ? calls : [],
         agents: Array.isArray(agents) ? agents : [],
         promos: Array.isArray(promos) ? promos : [],
       });
-    } catch (err) { if (!silent) showToast("Failed to connect to database.", "error"); }
+    } catch { if (!silent) toast("Failed to connect.", "error"); }
     finally { if (!silent) setLoading(false); }
   }, []);
 
-  useEffect(() => { loadAll(false); }, []);
+  useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const t = setInterval(() => load(true), 30000);
+    return () => clearInterval(t);
+  }, [user, load]);
 
   if (loading) return (
-    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "'Inter', system-ui, sans-serif", flexDirection: "column", gap: 20 }}>
+    <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.muted, fontFamily: "'Inter',system-ui,sans-serif", flexDirection: "column", gap: 20 }}>
       <style>{`body{margin:0;padding:0;background:${C.bg}}*{box-sizing:border-box}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.brand}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-      <div style={{ fontSize: 15, fontWeight: 500 }}>Loading Tanishq CRM...</div>
+      <div style={{ width: 36, height: 36, border: `3px solid ${C.border}`, borderTop: `3px solid ${C.brand}`, borderRadius: "50%", animation: "spin .8s linear infinite" }} />
+      Loading Tanishq CRM...
     </div>
   );
 
-  const shared = { ...data, onRefresh: () => loadAll(true), showToast };
+  const shared = { ...d, onRefresh: () => load(true), toast };
 
   return (
     <>
-      <style>{`body{margin:0;padding:0;background:${C.bg}}*{box-sizing:border-box}input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:0.5}`}</style>
-      {toast && <Toast msg={toast.msg} type={toast.type} />}
-      {!user && <LoginScreen agents={data.agents} onLogin={setUser} />}
+      <style>{`body{margin:0;padding:0;background:${C.bg}}*{box-sizing:border-box}input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.5}`}</style>
+      {toastState && <Toast msg={toastState.msg} type={toastState.type} />}
+      {!user && <LoginScreen agents={d.agents} onLogin={setUser} />}
       {user?.role === "admin" && <AdminPage {...shared} onLogout={() => setUser(null)} />}
       {user?.role === "agent" && <AgentPage {...shared} user={user} onLogout={() => setUser(null)} />}
     </>
