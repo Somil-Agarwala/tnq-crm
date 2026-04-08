@@ -534,175 +534,110 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
         const aw = acl.filter(c => c.outcome === "Converted").length;
         const prog = al.length ? Math.round((ac.length / al.length) * 100) : 0;
 
- // ═══════════════════════════════════════════════════════════
-// AGENT PAGE
-// ═══════════════════════════════════════════════════════════
-function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout, toast }) {
-  const [tab, setTab] = useState("queue");
-  const [logLead, setLogLead] = useState(null);
-  const [logOpen, setLogOpen] = useState(false);
-
-  const mine = calls.filter(c => c.agent_name === user.name);
-  const myWins = mine.filter(c => c.outcome === "Converted").length;
-  const myPending = mine.filter(c => c.callback_date && !c.callback_done);
-  const myRate = mine.length ? Math.round((myWins / mine.length) * 100) : 0;
-  const myLeads = contacts.filter(c => c.assigned_agent === user.name && c.lead_status !== "Contacted" && !c.dnc);
-  const myOC = Object.keys(OC).map(o => ({ name: o, count: mine.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
-
-  // New states for Campaign grid & Sorting
-  const [qCamp, setQCamp] = useState(null);
-  const [sortObj, setSortObj] = useState("newest");
-  const qCampaigns = [...new Set(myLeads.map(l => l.assigned_promo).filter(Boolean))];
-
-  // Removed the 'contacts' (Directory) tab entirely to hide Team Activity
-  const TABS = [
-    { key: "queue", label: `My Queue (${myLeads.length})` },
-    { key: "stats", label: "My Stats" },
-    { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` }
-  ];
-
-  function Nav() {
-    return (
-      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 32 }}>
-          <div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
-          <span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span>
-        </div>
-        <div style={{ display: "flex", gap: 2, flex: 1, overflowX: "auto" }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => { setTab(t.key); setQCamp(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
-          ))}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
-          {/* Prominent Manual Refresh Button */}
-          <button onClick={onRefresh} style={{ background: C.brand, border: "none", color: C.brandText, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Manual Refresh">↻ Refresh</button>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, borderLeft: `1px solid ${C.border}`, paddingLeft: 16 }}>
-            <Av name={user.name} size={30} />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
-            <button onClick={onLogout} style={{ background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer" }}>Logout</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
-      <Nav />
-      <div style={{ padding: "32px 36px", maxWidth: 1280, margin: "0 auto" }}>
-
-        {tab === "queue" && (
-          <div>
-            {!qCamp ? (
-              <>
-                <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Campaigns</div>
-                {/* Agent Campaign Grid View */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
-                  {qCampaigns.length === 0 ? (
-                    <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}`, gridColumn: "1/-1" }}><div style={{ color: C.muted, fontSize: 15 }}>🎉 Queue empty!</div></Card>
-                  ) : qCampaigns.map(p => {
-                    const cl = myLeads.filter(l => l.assigned_promo === p);
-                    return (
-                      <div key={p} onClick={() => setQCamp(p)} style={{ background: C.card, border: `1px solid ${C.border}`, borderTop: `4px solid ${C.brand}`, borderRadius: 12, padding: 22, cursor: "pointer", transition: "transform .15s" }} onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"} onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
-                        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>{p}</div>
-                        <div style={{ display: "flex", justifyContent: "space-between", color: C.muted, fontSize: 13 }}>
-                          <span>Pending Leads:</span>
-                          <span style={{ color: C.yellow, fontWeight: 700 }}>{cl.length}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            ) : (
-              <>
-                <button onClick={() => setQCamp(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Campaigns</button>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
-                  <div>
-                    <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>{qCamp} - Action Queue</div>
-                    <div style={{ color: C.muted, fontSize: 13 }}>Contacts assigned to you. Log an outcome to clear them.</div>
-                  </div>
-                  {/* Sorting Filter for Queue */}
-                  <select value={sortObj} onChange={e => setSortObj(e.target.value)} style={{ ...S.inp, width: 160 }}>
-                    <option value="newest">Sort: Newest First</option>
-                    <option value="name">Sort: Name A-Z</option>
-                    <option value="priority">Sort: Priority</option>
-                  </select>
-                </div>
-                {myLeads.filter(l => l.assigned_promo === qCamp)
-                  .sort((a, b) => {
-                    if (sortObj === "priority") return (b.priority || "").localeCompare(a.priority || "");
-                    if (sortObj === "name") return a.name.localeCompare(b.name);
-                    return new Date(b.assigned_at || 0) - new Date(a.assigned_at || 0); // newest fallback
-                  })
-                  .map(l => (
-                  <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "18px 24px", marginBottom: 14, display: "flex", alignItems: "center", gap: 20 }}>
-                    <Av name={l.name} size={46} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 800, fontSize: 17 }}>{l.name}</div>
-                      <div style={{ color: C.muted, fontSize: 13, marginTop: 4, display: "flex", gap: 20, flexWrap: "wrap" }}>
-                        <span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{l.phone || "No phone"}</span></span>
-                        {l.customer_type && <span>🏢 {l.customer_type}</span>}
-                        {l.priority && <span>⭐ {l.priority}</span>}
-                      </div>
-                    </div>
-                    <button onClick={() => setLogLead(l)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "12px 24px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>📞 Dial & Log</button>
+        return (
+          <div key={a.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+              <Av name={a.name} size={44} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{a.name}</div>
+                <div style={{ color: C.muted, fontSize: 12 }}>{a.role}</div>
+              </div>
+              <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                {[["Assigned", al.length, C.text], ["Pending", ap.length, C.yellow], ["Contacted", ac.length, C.green], ["Calls", acl.length, C.brand], ["Wins", aw, C.purple]].map(([l, v, c]) => (
+                  <div key={l} style={{ textAlign: "center" }}>
+                    <div style={{ color: c, fontWeight: 800, fontSize: 20, lineHeight: 1 }}>{v}</div>
+                    <div style={{ color: C.muted, fontSize: 10, fontWeight: 600, marginTop: 3 }}>{l.toUpperCase()}</div>
                   </div>
                 ))}
-              </>
-            )}
-          </div>
-        )}
-
-        {tab === "stats" && (
-          <div>
-            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Performance</div>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
-              <StatCard label="Total Calls" value={mine.length} />
-              <StatCard label="Conversions" value={myWins} accent={C.green} />
-              <StatCard label="Win Rate" value={myRate + "%"} accent={C.purple} />
-              <StatCard label="Callbacks" value={myPending.length} accent={C.yellow} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setAgView(a)} style={{ background: C.brand + "22", border: `1px solid ${C.brand}44`, color: C.brand, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                  View {al.length} Leads →
+                </button>
+                {ap.length > 0 && (
+                  <button onClick={() => setClearTarget({ agentName: a.name, promoName: campaign.name, pending: ap })}
+                    style={{ background: C.red + "18", border: `1px solid ${C.red}33`, color: C.red, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                    🗑️ Clear Queue
+                  </button>
+                )}
+              </div>
             </div>
-            {myOC.length > 0 && (
-              <Card style={{ marginBottom: 24 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Outcome Breakdown</div>
-                {myOC.map(o => (
-                  <div key={o.name} style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
-                    <div style={{ width: 140, color: C.muted, fontSize: 13 }}>{o.name}</div>
-                    <div style={{ flex: 1 }}><ProgBar value={(o.count / mine.length) * 100} color={OC[o.name]} /></div>
-                    <div style={{ color: C.text, fontSize: 13, fontWeight: 600, width: 24, textAlign: "right" }}>{o.count}</div>
-                  </div>
-                ))}
-              </Card>
-            )}
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>My Call History</div>
-            <DataTable headers={["Contact", "Date", "Campaign", "Dur", "Outcome", "Interest", "Notes"]}>
-              {mine.length === 0 && <tr><td colSpan={7} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls yet.</td></tr>}
-              {mine.slice(0, 20).map(c => (
-                <TR key={c.id}>
-                  <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
-                  <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
-                  <td style={S.td}>{c.promo_name}</td>
-                  <td style={{ ...S.td, color: C.muted, textAlign: "center" }}>{c.duration_minutes ? c.duration_minutes + "m" : "—"}</td>
-                  <td style={S.td}><Badge label={c.outcome} color={OC[c.outcome] || C.muted} /></td>
-                  <td style={S.td}><Badge label={c.interest_level} color={c.interest_level === "High" ? C.green : c.interest_level === "Medium" ? C.yellow : C.muted} /></td>
-                  <td style={{ ...S.td, color: C.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
-                </TR>
-              ))}
-            </DataTable>
+            <ProgBar value={prog} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 11, color: C.muted }}>
+              <span>{prog}% contacted</span><span>{ac.length}/{al.length}</span>
+            </div>
           </div>
-        )}
+        );
+      })}
 
-        {tab === "callbacks" && <CallbacksTab calls={mine} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
-
-      </div>
-
-      {logOpen && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} prefill={null} onClose={() => setLogOpen(false)} onDone={onRefresh} toast={toast} />}
-      {logLead && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} prefill={logLead} onClose={() => setLogLead(null)} onDone={onRefresh} toast={toast} />}
+      {clearTarget && <ClearModal {...clearTarget} onClose={() => setClearTarget(null)} onDone={onRefresh} toast={toast} />}
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════
+// CONTACTS TAB
+// ═══════════════════════════════════════════════════════════
+function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmin }) {
+  const [search, setSearch] = useState("");
+  const [sf, setSf] = useState("");
+  const [modal, setModal] = useState(null);
+  const [sel2, setSel2] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [checked, setChecked] = useState(new Set());
+  const [bulk, setBulk] = useState("");
+  const [ra, setRa] = useState("");
+  const [rp, setRp] = useState("");
+  const [form, setForm] = useState({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
+
+  const filtered = useMemo(() =>
+    contacts.filter(c => {
+      const ms = (c.name || "").toLowerCase().includes(search.toLowerCase()) ||
+        (c.customer_type || "").toLowerCase().includes(search.toLowerCase()) ||
+        (c.phone || "").includes(search);
+      return ms && (!sf || c.lead_status === sf);
+    }), [contacts, search, sf]);
+
+  const togC = id => setChecked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const togAll = () => setChecked(checked.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(c => c.id)));
+
+  async function bulkDel() {
+    if (!window.confirm(`Delete ${checked.size} contacts?`)) return;
+    try { await db.removeMany("contacts", [...checked]); toast(`Deleted ${checked.size}.`, "error"); setChecked(new Set()); onRefresh(); }
+    catch { toast("Error.", "error"); }
+  }
+
+  async function bulkReassign() {
+    if (!ra && !rp) return;
+    const up = {};
+    if (ra) up.assigned_agent = ra;
+    if (rp) up.assigned_promo = rp;
+    try {
+      await Promise.all([...checked].map(id => db.update("contacts", id, up)));
+      toast(`Reassigned ${checked.size} contacts`); setChecked(new Set()); setBulk(""); onRefresh();
+    } catch { toast("Error.", "error"); }
+  }
+
+  function openAdd() { setSel2(null); setForm({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" }); setModal("c"); }
+  function openEdit(c) { setSel2(c); setForm({ name: c.name, phone: c.phone || "", customer_type: c.customer_type || "", priority: c.priority || "", category: c.category || "Business", dnc: c.dnc || false, notes: c.notes || "", assigned_agent: c.assigned_agent || "", assigned_promo: c.assigned_promo || "", lead_status: c.lead_status || "Pending" }); setModal("c"); }
+
+  async function save() {
+    if (!form.name) return;
+    setSaving(true);
+    try {
+      if (sel2) { await db.update("contacts", sel2.id, form); toast("Updated ✓"); }
+      else { await db.insert("contacts", form); toast("Added ✓"); }
+      setModal(null); onRefresh();
+    } catch { toast("Error.", "error"); } finally { setSaving(false); }
+  }
+
+  async function del(id, name) {
+    if (!window.confirm(`Delete "${name}"?`)) return;
+    try { await db.remove("contacts", id); toast("Deleted.", "error"); onRefresh(); }
+    catch { toast("Error.", "error"); }
+  }
+
+  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
   return (
     <div>
@@ -878,15 +813,16 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   const myLeads = contacts.filter(c => c.assigned_agent === user.name && c.lead_status !== "Contacted" && !c.dnc);
   const myOC = Object.keys(OC).map(o => ({ name: o, count: mine.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
 
-  const [qFilter, setQFilter] = useState("");
-  const filteredLeads = qFilter ? myLeads.filter(l => l.assigned_promo === qFilter) : myLeads;
+  // New states for Campaign grid & Sorting
+  const [qCamp, setQCamp] = useState(null);
+  const [sortObj, setSortObj] = useState("newest");
   const qCampaigns = [...new Set(myLeads.map(l => l.assigned_promo).filter(Boolean))];
 
+  // Removed the 'contacts' (Directory) tab entirely to hide Team Activity
   const TABS = [
     { key: "queue", label: `My Queue (${myLeads.length})` },
     { key: "stats", label: "My Stats" },
-    { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` },
-    { key: "contacts", label: "Directory" },
+    { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` }
   ];
 
   function Nav() {
@@ -898,12 +834,13 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
         </div>
         <div style={{ display: "flex", gap: 2, flex: 1, overflowX: "auto" }}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
+            <button key={t.key} onClick={() => { setTab(t.key); setQCamp(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
-          <button onClick={onRefresh} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 14px", fontSize: 13, cursor: "pointer" }} title="Refresh data">↻</button>
+          {/* Prominent Manual Refresh Button */}
+          <button onClick={onRefresh} style={{ background: C.brand, border: "none", color: C.brandText, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Manual Refresh">↻ Refresh</button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, borderLeft: `1px solid ${C.border}`, paddingLeft: 16 }}>
             <Av name={user.name} size={30} />
             <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
@@ -921,37 +858,64 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
 
         {tab === "queue" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 12 }}>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>My Action Queue</div>
-              {qCampaigns.length > 0 && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => setQFilter("")} style={{ background: !qFilter ? C.brand : "#27272a", color: !qFilter ? C.brandText : C.muted, border: "none", borderRadius: 20, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>All ({myLeads.length})</button>
-                  {qCampaigns.map(p => (
-                    <button key={p} onClick={() => setQFilter(qFilter === p ? "" : p)} style={{ background: qFilter === p ? C.brand : "#27272a", color: qFilter === p ? C.brandText : C.muted, border: "none", borderRadius: 20, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                      {p} ({myLeads.filter(l => l.assigned_promo === p).length})
-                    </button>
-                  ))}
+            {!qCamp ? (
+              <>
+                <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Campaigns</div>
+                {/* Agent Campaign Grid View */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
+                  {qCampaigns.length === 0 ? (
+                    <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}`, gridColumn: "1/-1" }}><div style={{ color: C.muted, fontSize: 15 }}>🎉 Queue empty!</div></Card>
+                  ) : qCampaigns.map(p => {
+                    const cl = myLeads.filter(l => l.assigned_promo === p);
+                    return (
+                      <div key={p} onClick={() => setQCamp(p)} style={{ background: C.card, border: `1px solid ${C.border}`, borderTop: `4px solid ${C.brand}`, borderRadius: 12, padding: 22, cursor: "pointer", transition: "transform .15s" }} onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"} onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
+                        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>{p}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: C.muted, fontSize: 13 }}>
+                          <span>Pending Leads:</span>
+                          <span style={{ color: C.yellow, fontWeight: 700 }}>{cl.length}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )}
-            </div>
-            <div style={{ color: C.muted, fontSize: 13, marginBottom: 24 }}>Contacts assigned to you. Log an outcome to clear them.</div>
-            {filteredLeads.length === 0
-              ? <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}` }}><div style={{ color: C.muted, fontSize: 15 }}>🎉 Queue empty!</div></Card>
-              : filteredLeads.map(l => (
-                <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "18px 24px", marginBottom: 14, display: "flex", alignItems: "center", gap: 20 }}>
-                  <Av name={l.name} size={46} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 800, fontSize: 17 }}>{l.name}</div>
-                    <div style={{ color: C.muted, fontSize: 13, marginTop: 4, display: "flex", gap: 20, flexWrap: "wrap" }}>
-                      <span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{l.phone || "No phone"}</span></span>
-                      {l.customer_type && <span>🏢 {l.customer_type}</span>}
-                      {l.priority && <span>⭐ {l.priority}</span>}
-                    </div>
-                    {l.assigned_promo && <div style={{ marginTop: 8 }}><Badge label={`Campaign: ${l.assigned_promo}`} color={C.brand} /></div>}
+              </>
+            ) : (
+              <>
+                <button onClick={() => setQCamp(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Campaigns</button>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>{qCamp} - Action Queue</div>
+                    <div style={{ color: C.muted, fontSize: 13 }}>Contacts assigned to you. Log an outcome to clear them.</div>
                   </div>
-                  <button onClick={() => setLogLead(l)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "12px 24px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>📞 Dial & Log</button>
+                  {/* Sorting Filter for Queue */}
+                  <select value={sortObj} onChange={e => setSortObj(e.target.value)} style={{ ...S.inp, width: 160 }}>
+                    <option value="newest">Sort: Newest First</option>
+                    <option value="name">Sort: Name A-Z</option>
+                    <option value="priority">Sort: Priority</option>
+                  </select>
                 </div>
-              ))}
+                {myLeads.filter(l => l.assigned_promo === qCamp)
+                  .sort((a, b) => {
+                    if (sortObj === "priority") return (b.priority || "").localeCompare(a.priority || "");
+                    if (sortObj === "name") return a.name.localeCompare(b.name);
+                    return new Date(b.assigned_at || 0) - new Date(a.assigned_at || 0); // newest fallback
+                  })
+                  .map(l => (
+                  <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "18px 24px", marginBottom: 14, display: "flex", alignItems: "center", gap: 20 }}>
+                    <Av name={l.name} size={46} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 800, fontSize: 17 }}>{l.name}</div>
+                      <div style={{ color: C.muted, fontSize: 13, marginTop: 4, display: "flex", gap: 20, flexWrap: "wrap" }}>
+                        <span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{l.phone || "No phone"}</span></span>
+                        {l.customer_type && <span>🏢 {l.customer_type}</span>}
+                        {l.priority && <span>⭐ {l.priority}</span>}
+                      </div>
+                    </div>
+                    <button onClick={() => setLogLead(l)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "12px 24px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>📞 Dial & Log</button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
@@ -976,7 +940,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
                 ))}
               </Card>
             )}
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>Recent Activity</div>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>My Call History</div>
             <DataTable headers={["Contact", "Date", "Campaign", "Dur", "Outcome", "Interest", "Notes"]}>
               {mine.length === 0 && <tr><td colSpan={7} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls yet.</td></tr>}
               {mine.slice(0, 20).map(c => (
@@ -995,7 +959,6 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
         )}
 
         {tab === "callbacks" && <CallbacksTab calls={mine} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
-        {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin={false} />}
 
       </div>
 
