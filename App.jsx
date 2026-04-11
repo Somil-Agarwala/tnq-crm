@@ -745,7 +745,7 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmi
 // ═══════════════════════════════════════════════════════════
 // CALLBACKS TAB
 // ═══════════════════════════════════════════════════════════
-function CallbacksTab({ calls, isAdmin, onRefresh, toast }) {
+function CallbacksTab({ calls, contacts, isAdmin, onRefresh, toast }) {
   const [showDone, setShowDone] = useState(false);
   const pending = calls.filter(c => c.callback_date && !c.callback_done);
   const done = calls.filter(c => c.callback_done);
@@ -775,7 +775,11 @@ function CallbacksTab({ calls, isAdmin, onRefresh, toast }) {
         <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}` }}>
           <div style={{ color: C.muted, fontSize: 15 }}>{showDone ? "No completed callbacks." : "🎉 All caught up!"}</div>
         </Card>
-      ) : list.map(c => (
+      ) : list.map(c => {
+        const contactInfo = contacts.find(x => x.name === c.contact_name);
+        const phone = contactInfo?.phone || "No phone";
+        
+        return (
         <div key={c.id} style={{ background: C.card, border: `1px solid ${showDone ? C.border : C.yellow + "44"}`, borderLeft: `4px solid ${showDone ? C.green : C.yellow}`, borderRadius: 12, padding: "18px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
           <div style={{ background: (showDone ? C.green : C.yellow) + "18", borderRadius: 10, padding: "10px 14px", textAlign: "center", minWidth: 56 }}>
             <div style={{ color: showDone ? C.green : C.yellow, fontWeight: 800, fontSize: 22, lineHeight: 1 }}>{c.callback_date?.slice(8)}</div>
@@ -783,7 +787,10 @@ function CallbacksTab({ calls, isAdmin, onRefresh, toast }) {
           </div>
           <Av name={c.contact_name} size={44} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>{c.contact_name}</div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>
+              {c.contact_name}
+              <span style={{ color: C.muted, fontWeight: 500, fontSize: 14, marginLeft: 10 }}>📱 {phone}</span>
+            </div>
             <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>
               {isAdmin && <span style={{ color: C.brand, fontWeight: 600, marginRight: 8 }}>{c.agent_name}</span>}
               {c.promo_name}
@@ -793,7 +800,47 @@ function CallbacksTab({ calls, isAdmin, onRefresh, toast }) {
           {!showDone && <button onClick={() => markDone(c.id)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>✓ Done</button>}
           {showDone && <Badge label="Completed" color={C.green} />}
         </div>
-      ))}
+      )})}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// NOT ANSWERED TAB
+// ═══════════════════════════════════════════════════════════
+function NotAnsweredTab({ calls, contacts, isAdmin }) {
+  const list = calls.filter(c => c.outcome === "No Answer");
+  
+  return (
+    <div>
+      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Not Answered Calls</div>
+      
+      {list.length === 0 ? (
+        <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}` }}>
+          <div style={{ color: C.muted, fontSize: 15 }}>No missed connections.</div>
+        </Card>
+      ) : list.map(c => {
+        const contactInfo = contacts.find(x => x.name === c.contact_name);
+        const phone = contactInfo?.phone || "No phone";
+        
+        return (
+          <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.subtle}`, borderRadius: 12, padding: "18px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
+            <Av name={c.contact_name} size={44} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>
+                {c.contact_name}
+                <span style={{ color: C.muted, fontWeight: 500, fontSize: 14, marginLeft: 10 }}>📱 {phone}</span>
+              </div>
+              <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>
+                {isAdmin && <span style={{ color: C.brand, fontWeight: 600, marginRight: 8 }}>{c.agent_name}</span>}
+                {c.promo_name} • {c.call_date} {c.call_time?.slice(0, 5)}
+              </div>
+              {c.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 6, fontStyle: "italic" }}>"{c.notes}"</div>}
+            </div>
+            <Badge label="No Answer" color={C.muted} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -809,6 +856,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   const mine = calls.filter(c => c.agent_name === user.name);
   const myWins = mine.filter(c => c.outcome === "Converted").length;
   const myPending = mine.filter(c => c.callback_date && !c.callback_done);
+  const myNoAnswer = mine.filter(c => c.outcome === "No Answer");
   const myRate = mine.length ? Math.round((myWins / mine.length) * 100) : 0;
   const myLeads = contacts.filter(c => c.assigned_agent === user.name && c.lead_status !== "Contacted" && !c.dnc);
   const myOC = Object.keys(OC).map(o => ({ name: o, count: mine.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
@@ -822,7 +870,8 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   const TABS = [
     { key: "queue", label: `My Queue (${myLeads.length})` },
     { key: "stats", label: "My Stats" },
-    { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` }
+    { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` },
+    { key: "no_answer", label: `Not Answered${myNoAnswer.length > 0 ? ` (${myNoAnswer.length})` : ""}` }
   ];
 
   function Nav() {
@@ -958,7 +1007,8 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
           </div>
         )}
 
-        {tab === "callbacks" && <CallbacksTab calls={mine} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
+        {tab === "callbacks" && <CallbacksTab calls={mine} contacts={contacts} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
+        {tab === "no_answer" && <NotAnsweredTab calls={mine} contacts={contacts} isAdmin={false} />}
 
       </div>
 
@@ -1003,6 +1053,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
   const conversions = calls.filter(c => c.outcome === "Converted").length;
   const convRate = calls.length ? Math.round((conversions / calls.length) * 100) : 0;
   const cbPending = calls.filter(c => c.callback_date && !c.callback_done);
+  const adminNoAnswer = calls.filter(c => c.outcome === "No Answer");
   const activePromos = promos.filter(p => p.status === "Active");
 
   const agStats = agents.map(a => ({
@@ -1027,6 +1078,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
     { key: "agents", label: "Team" },
     { key: "calls", label: "Call Logs" },
     { key: "callbacks", label: `Callbacks${cbPending.length > 0 ? ` (${cbPending.length})` : ""}` },
+    { key: "no_answer", label: `Not Answered${adminNoAnswer.length > 0 ? ` (${adminNoAnswer.length})` : ""}` },
     { key: "contacts", label: "Directory" },
   ];
 
@@ -1414,7 +1466,8 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
           </div>
         )}
 
-        {tab === "callbacks" && <CallbacksTab calls={calls} isAdmin onRefresh={onRefresh} toast={toast} />}
+        {tab === "callbacks" && <CallbacksTab calls={calls} contacts={contacts} isAdmin onRefresh={onRefresh} toast={toast} />}
+        {tab === "no_answer" && <NotAnsweredTab calls={calls} contacts={contacts} isAdmin />}
         {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin />}
       </div>
 
