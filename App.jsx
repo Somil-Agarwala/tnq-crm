@@ -852,6 +852,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   const [tab, setTab] = useState("queue");
   const [logLead, setLogLead] = useState(null);
   const [logOpen, setLogOpen] = useState(false);
+  const [visibleLogs, setVisibleLogs] = useState(20);
 
   const mine = calls.filter(c => c.agent_name === user.name);
   const myWins = mine.filter(c => c.outcome === "Converted").length;
@@ -992,7 +993,7 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>My Call History</div>
             <DataTable headers={["Contact", "Date", "Campaign", "Dur", "Outcome", "Interest", "Notes"]}>
               {mine.length === 0 && <tr><td colSpan={7} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls yet.</td></tr>}
-              {mine.slice(0, 20).map(c => (
+              {mine.slice(0, visibleLogs).map(c => (
                 <TR key={c.id}>
                   <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
                   <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
@@ -1001,11 +1002,25 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
                   <td style={S.td}><Badge label={c.outcome} color={OC[c.outcome] || C.muted} /></td>
                   <td style={S.td}><Badge label={c.interest_level} color={c.interest_level === "High" ? C.green : c.interest_level === "Medium" ? C.yellow : C.muted} /></td>
                   <td style={{ ...S.td, color: C.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
-                </TR>
-              ))}
-            </DataTable>
-          </div>
-        )}
+              </TR>
+              ))}
+            </DataTable>
+            
+            {visibleLogs < mine.length && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                <Btn 
+                  onClick={() => setVisibleLogs(v => v + 20)} 
+                  color="transparent" 
+                  textColor={C.text} 
+                  outline
+                >
+                  Load More ({mine.length - visibleLogs} remaining) ↓
+                </Btn>
+              </div>
+            )}
+            
+          </div>
+        )}
 
         {tab === "callbacks" && <CallbacksTab calls={mine} contacts={contacts} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
         {tab === "no_answer" && <NotAnsweredTab calls={mine} contacts={contacts} isAdmin={false} />}
