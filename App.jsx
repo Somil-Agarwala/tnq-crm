@@ -43,7 +43,19 @@ const db = {
       method: "DELETE",
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
     });
-    if (!res.ok) throw new Error(res.statusText);
+   if (!res.ok) throw new Error(res.statusText);
+  },
+  async insertBulk(table, rows) {
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(chunk)
+      });
+      if (!res.ok) throw new Error(`Bulk insert failed at chunk ${i}: ${res.statusText}`);
+    }
   },
   async clearPending(agentName, promoName, since) {
     let url = `${SUPABASE_URL}/rest/v1/contacts?lead_status=eq.Pending&assigned_agent=eq.${encodeURIComponent(agentName)}&assigned_promo=eq.${encodeURIComponent(promoName)}`;
@@ -1151,13 +1163,14 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
     setImporting(true);
     const now = new Date().toISOString();
     try {
-      await Promise.all(csv.map(row => db.insert("contacts", {
+      const rows = csv.map(row => ({
         name: row.name || "Unknown", phone: row.phone || "",
         customer_type: row.customer_type || "", priority: row.priority || "",
         category: "Business", dnc: false,
         assigned_agent: impAgent, assigned_promo: impPromo,
         lead_status: "Pending", assigned_at: now
-      })));
+      }));
+      await db.insertBulk("contacts", rows);
       toast(`✓ Imported ${csv.length} leads to ${impAgent}`);
       setImpModal(false); setCsv([]); setIA(""); setIP(""); onRefresh();
     } catch { toast("Import error.", "error"); }
