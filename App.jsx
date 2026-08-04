@@ -933,18 +933,18 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
 
   function Nav() {
     return (
-      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
+      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 32 }}>
           <div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
           <span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span>
         </div>
-        <div style={{ display: "flex", gap: 2, flex: 1, overflowX: "auto" }}>
+       <div style={{ display: "flex", gap: 2, flex: 1 }}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => { setTab(t.key); setQCamp(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
+            <button key={t.key} onClick={() => { setTab(t.key); setQCamp(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 12px", height: 60, cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
+          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 18, fontWeight: 700, cursor: "pointer" }} title="Log Call">+</button>
           {/* Prominent Manual Refresh Button */}
           <button onClick={onRefresh} style={{ background: C.brand, border: "none", color: C.brandText, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Manual Refresh">↻ Refresh</button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, borderLeft: `1px solid ${C.border}`, paddingLeft: 16 }}>
@@ -1399,19 +1399,19 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
 
   function Nav() {
     return (
-      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 28 }}>
+      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 10 }}>
           <div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
           <span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span>
           <Badge label="ADMIN" color={C.brand} />
         </div>
-        <div style={{ display: "flex", gap: 0, flex: 1, overflowX: "auto" }}>
+        <div style={{ display: "flex", gap: 0, flex: 1 }}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => { setTab(t.key); setCampDetail(null); setAgentInspect(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 16px", height: 60, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
+            <button key={t.key} onClick={() => { setTab(t.key); setCampDetail(null); setAgentInspect(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 9px", height: 60, cursor: "pointer", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
           ))}
         </div>
         <div style={{ display: "flex", gap: 12 }}>
-          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Log Call</button>
+          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 18, fontWeight: 700, cursor: "pointer" }} title="Log Call">+</button>
           <button onClick={onRefresh} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 14px", fontSize: 13, cursor: "pointer" }} title="Refresh data">↻</button>
           <button onClick={onLogout} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>Logout</button>
         </div>
