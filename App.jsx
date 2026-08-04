@@ -185,6 +185,27 @@ function TR({ children, selected }) {
   );
 }
 
+function Paginator({ page, total, size, onChange }) {
+  const totalPages = Math.ceil(total / size);
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 16, padding: "4px 0" }}>
+      <button onClick={() => onChange(page - 1)} disabled={page === 0}
+        style={{ background: C.card, border: `1px solid ${C.border}`, color: page === 0 ? C.subtle : C.text, borderRadius: 8, padding: "8px 20px", cursor: page === 0 ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>
+        ← Prev
+      </button>
+      <span style={{ color: C.muted, fontSize: 13, fontWeight: 600 }}>
+        Page {page + 1} of {totalPages}
+        <span style={{ color: C.subtle, fontWeight: 400 }}> · {total} total</span>
+      </span>
+      <button onClick={() => onChange(page + 1)} disabled={page >= totalPages - 1}
+        style={{ background: C.card, border: `1px solid ${C.border}`, color: page >= totalPages - 1 ? C.subtle : C.text, borderRadius: 8, padding: "8px 20px", cursor: page >= totalPages - 1 ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 13, fontFamily: "inherit" }}>
+        Next →
+      </button>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════════════════
@@ -601,6 +622,8 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmi
   const [ra, setRa] = useState("");
   const [rp, setRp] = useState("");
   const [form, setForm] = useState({ name: "", phone: "", customer_type: "", priority: "", category: "Business", dnc: false, notes: "", assigned_agent: "", assigned_promo: "", lead_status: "Pending" });
+  const [page, setPage] = useState(0);
+  const PAGE = 10;
 
   const filtered = useMemo(() =>
     contacts.filter(c => {
@@ -609,6 +632,8 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmi
         (c.phone || "").includes(search);
       return ms && (!sf || c.lead_status === sf);
     }), [contacts, search, sf]);
+
+  useEffect(() => { setPage(0); }, [search, sf]);
 
   const togC = id => setChecked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const togAll = () => setChecked(checked.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(c => c.id)));
@@ -696,11 +721,11 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmi
         </div>
       )}
 
-      <div style={{ color: C.muted, fontSize: 12, marginBottom: 10 }}>Showing {filtered.length} of {contacts.length}</div>
+      <div style={{ color: C.muted, fontSize: 12, marginBottom: 10 }}>Showing {Math.min(page * PAGE + 1, filtered.length)}–{Math.min((page + 1) * PAGE, filtered.length)} of {filtered.length} contacts</div>
 
       <DataTable headers={["", "Contact", "Phone", "Customer Type", "Priority", "Type", "Status", isAdmin ? "Agent" : "Notes", ""]}>
         {filtered.length === 0 && <tr><td colSpan={9} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 60 }}>No contacts.</td></tr>}
-        {filtered.map(c => {
+        {filtered.slice(page * PAGE, (page + 1) * PAGE).map(c => {
           const cc = calls.filter(x => x.contact_name === c.name).length;
           const isSel = checked.has(c.id);
           return (
@@ -725,6 +750,7 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmi
           );
         })}
       </DataTable>
+      <Paginator page={page} total={filtered.length} size={PAGE} onChange={setPage} />
 
       {modal === "c" && (
         <Modal title={sel2 ? "Edit Contact" : "Add Contact"} onClose={() => setModal(null)}>
@@ -759,8 +785,12 @@ function ContactsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmi
 // ═══════════════════════════════════════════════════════════
 function CallbacksTab({ calls, contacts, isAdmin, onRefresh, toast }) {
   const [showDone, setShowDone] = useState(false);
+  const [page, setPage] = useState(0);
+  const PAGE = 10;
   const pending = calls.filter(c => c.callback_date && !c.callback_done);
   const done = calls.filter(c => c.callback_done);
+
+  useEffect(() => { setPage(0); }, [showDone]);
 
   async function markDone(id) {
     try { await db.update("call_logs", id, { callback_done: true }); toast("Done ✓"); onRefresh(); }
@@ -787,32 +817,37 @@ function CallbacksTab({ calls, contacts, isAdmin, onRefresh, toast }) {
         <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}` }}>
           <div style={{ color: C.muted, fontSize: 15 }}>{showDone ? "No completed callbacks." : "🎉 All caught up!"}</div>
         </Card>
-      ) : list.map(c => {
-        const contactInfo = contacts.find(x => x.name === c.contact_name);
-        const phone = contactInfo?.phone || "No phone";
-        
-        return (
-        <div key={c.id} style={{ background: C.card, border: `1px solid ${showDone ? C.border : C.yellow + "44"}`, borderLeft: `4px solid ${showDone ? C.green : C.yellow}`, borderRadius: 12, padding: "18px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
-          <div style={{ background: (showDone ? C.green : C.yellow) + "18", borderRadius: 10, padding: "10px 14px", textAlign: "center", minWidth: 56 }}>
-            <div style={{ color: showDone ? C.green : C.yellow, fontWeight: 800, fontSize: 22, lineHeight: 1 }}>{c.callback_date?.slice(8)}</div>
-            <div style={{ color: C.muted, fontSize: 10 }}>{c.callback_date?.slice(5, 7)}/{c.callback_date?.slice(0, 4)}</div>
-          </div>
-          <Av name={c.contact_name} size={44} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>
-              {c.contact_name}
-              <span style={{ color: C.muted, fontWeight: 500, fontSize: 14, marginLeft: 10 }}>📱 {phone}</span>
-            </div>
-            <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>
-              {isAdmin && <span style={{ color: C.brand, fontWeight: 600, marginRight: 8 }}>{c.agent_name}</span>}
-              {c.promo_name}
-            </div>
-            {c.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 6, fontStyle: "italic" }}>"{c.notes}"</div>}
-          </div>
-          {!showDone && <button onClick={() => markDone(c.id)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>✓ Done</button>}
-          {showDone && <Badge label="Completed" color={C.green} />}
-        </div>
-      )})}
+      ) : (
+        <>
+          {list.slice(page * PAGE, (page + 1) * PAGE).map(c => {
+            const contactInfo = contacts.find(x => x.name === c.contact_name);
+            const phone = contactInfo?.phone || "No phone";
+            return (
+              <div key={c.id} style={{ background: C.card, border: `1px solid ${showDone ? C.border : C.yellow + "44"}`, borderLeft: `4px solid ${showDone ? C.green : C.yellow}`, borderRadius: 12, padding: "18px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
+                <div style={{ background: (showDone ? C.green : C.yellow) + "18", borderRadius: 10, padding: "10px 14px", textAlign: "center", minWidth: 56 }}>
+                  <div style={{ color: showDone ? C.green : C.yellow, fontWeight: 800, fontSize: 22, lineHeight: 1 }}>{c.callback_date?.slice(8)}</div>
+                  <div style={{ color: C.muted, fontSize: 10 }}>{c.callback_date?.slice(5, 7)}/{c.callback_date?.slice(0, 4)}</div>
+                </div>
+                <Av name={c.contact_name} size={44} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>
+                    {c.contact_name}
+                    <span style={{ color: C.muted, fontWeight: 500, fontSize: 14, marginLeft: 10 }}>📱 {phone}</span>
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>
+                    {isAdmin && <span style={{ color: C.brand, fontWeight: 600, marginRight: 8 }}>{c.agent_name}</span>}
+                    {c.promo_name}
+                  </div>
+                  {c.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 6, fontStyle: "italic" }}>"{c.notes}"</div>}
+                </div>
+                {!showDone && <button onClick={() => markDone(c.id)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "10px 22px", fontWeight: 700, cursor: "pointer" }}>✓ Done</button>}
+                {showDone && <Badge label="Completed" color={C.green} />}
+              </div>
+            );
+          })}
+          <Paginator page={page} total={list.length} size={PAGE} onChange={setPage} />
+        </>
+      )}
     </div>
   );
 }
@@ -822,37 +857,46 @@ function CallbacksTab({ calls, contacts, isAdmin, onRefresh, toast }) {
 // ═══════════════════════════════════════════════════════════
 function NotAnsweredTab({ calls, contacts, isAdmin }) {
   const list = calls.filter(c => c.outcome === "No Answer");
-  
+  const [page, setPage] = useState(0);
+  const PAGE = 10;
+
   return (
     <div>
-      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Not Answered Calls</div>
-      
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>Not Answered Calls</div>
+        <div style={{ color: C.muted, fontSize: 13 }}>{list.length} total</div>
+      </div>
+
       {list.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}` }}>
           <div style={{ color: C.muted, fontSize: 15 }}>No missed connections.</div>
         </Card>
-      ) : list.map(c => {
-        const contactInfo = contacts.find(x => x.name === c.contact_name);
-        const phone = contactInfo?.phone || "No phone";
-        
-        return (
-          <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.subtle}`, borderRadius: 12, padding: "18px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
-            <Av name={c.contact_name} size={44} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>
-                {c.contact_name}
-                <span style={{ color: C.muted, fontWeight: 500, fontSize: 14, marginLeft: 10 }}>📱 {phone}</span>
+      ) : (
+        <>
+          {list.slice(page * PAGE, (page + 1) * PAGE).map(c => {
+            const contactInfo = contacts.find(x => x.name === c.contact_name);
+            const phone = contactInfo?.phone || "No phone";
+            return (
+              <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.subtle}`, borderRadius: 12, padding: "18px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
+                <Av name={c.contact_name} size={44} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>
+                    {c.contact_name}
+                    <span style={{ color: C.muted, fontWeight: 500, fontSize: 14, marginLeft: 10 }}>📱 {phone}</span>
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>
+                    {isAdmin && <span style={{ color: C.brand, fontWeight: 600, marginRight: 8 }}>{c.agent_name}</span>}
+                    {c.promo_name} • {c.call_date} {c.call_time?.slice(0, 5)}
+                  </div>
+                  {c.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 6, fontStyle: "italic" }}>"{c.notes}"</div>}
+                </div>
+                <Badge label="No Answer" color={C.muted} />
               </div>
-              <div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>
-                {isAdmin && <span style={{ color: C.brand, fontWeight: 600, marginRight: 8 }}>{c.agent_name}</span>}
-                {c.promo_name} • {c.call_date} {c.call_time?.slice(0, 5)}
-              </div>
-              {c.notes && <div style={{ color: C.muted, fontSize: 12, marginTop: 6, fontStyle: "italic" }}>"{c.notes}"</div>}
-            </div>
-            <Badge label="No Answer" color={C.muted} />
-          </div>
-        );
-      })}
+            );
+          })}
+          <Paginator page={page} total={list.length} size={PAGE} onChange={setPage} />
+        </>
+      )}
     </div>
   );
 }
@@ -1046,6 +1090,178 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
 }
 
 // ═══════════════════════════════════════════════════════════
+// REPORTS TAB
+// ═══════════════════════════════════════════════════════════
+function ReportsTab({ calls, agents }) {
+  const [selAgents, setSelAgents] = useState(new Set());
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [generated, setGenerated] = useState(false);
+
+  function toggleAgent(name) {
+    setSelAgents(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
+  }
+
+  const reportCalls = useMemo(() => {
+    if (!generated) return [];
+    return calls.filter(c => {
+      if (selAgents.size > 0 && !selAgents.has(c.agent_name)) return false;
+      if (dateFrom && c.call_date < dateFrom) return false;
+      if (dateTo && c.call_date > dateTo) return false;
+      return true;
+    });
+  }, [calls, selAgents, dateFrom, dateTo, generated]);
+
+  const total = reportCalls.length;
+  const conversions = reportCalls.filter(c => c.outcome === "Converted").length;
+  const winRate = total ? Math.round((conversions / total) * 100) : 0;
+  const totalDur = reportCalls.reduce((s, c) => s + (c.duration_minutes || 0), 0);
+  const callbacks = reportCalls.filter(c => c.callback_date).length;
+  const cbDone = reportCalls.filter(c => c.callback_done).length;
+
+  const ocBreakdown = Object.keys(OC).map(o => ({ name: o, count: reportCalls.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
+
+  const agentNames = selAgents.size > 0 ? [...selAgents] : [...new Set(reportCalls.map(c => c.agent_name).filter(Boolean))];
+  const agentBreakdown = agentNames.map(name => {
+    const ac = reportCalls.filter(c => c.agent_name === name);
+    const wins = ac.filter(c => c.outcome === "Converted").length;
+    const rate = ac.length ? Math.round((wins / ac.length) * 100) : 0;
+    const dur = ac.reduce((s, c) => s + (c.duration_minutes || 0), 0);
+    return { name, total: ac.length, wins, rate, dur };
+  }).sort((a, b) => b.total - a.total);
+
+  const byDate = {};
+  reportCalls.forEach(c => {
+    if (!c.call_date) return;
+    if (!byDate[c.call_date]) byDate[c.call_date] = [];
+    byDate[c.call_date].push(c);
+  });
+  const dateRows = Object.entries(byDate).sort((a, b) => b[0].localeCompare(a[0])).map(([date, dc]) => {
+    const wins = dc.filter(c => c.outcome === "Converted").length;
+    const rate = dc.length ? Math.round((wins / dc.length) * 100) : 0;
+    const dur = dc.reduce((s, c) => s + (c.duration_minutes || 0), 0);
+    const byAgent = {};
+    dc.forEach(c => { byAgent[c.agent_name] = (byAgent[c.agent_name] || 0) + 1; });
+    return { date, total: dc.length, wins, rate, dur, byAgent };
+  });
+
+  function exportReport() {
+    const rows = reportCalls.map(c => ({ date: c.call_date, time: c.call_time, contact: c.contact_name, agent: c.agent_name, campaign: c.promo_name, duration_mins: c.duration_minutes, outcome: c.outcome, interest: c.interest_level, callback_date: c.callback_date || "", callback_done: c.callback_done ? "Yes" : "No", notes: c.notes || "" }));
+    exportCSV(rows, `tanishq_report_${dateFrom || "all"}_to_${dateTo || "all"}.csv`);
+  }
+
+  function generate() { setGenerated(false); setTimeout(() => setGenerated(true), 0); }
+  const hasData = generated && total > 0;
+
+  return (
+    <div>
+      <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Performance Reports</div>
+
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>1. Date Range</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+          <div><label style={S.lbl}>From</label><input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setGenerated(false); }} style={S.inp} /></div>
+          <div><label style={S.lbl}>To</label><input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setGenerated(false); }} style={S.inp} /></div>
+        </div>
+
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>2. Agents</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+          <button onClick={() => { setSelAgents(new Set()); setGenerated(false); }}
+            style={{ background: selAgents.size === 0 ? C.brand + "33" : C.bg, border: `1px solid ${selAgents.size === 0 ? C.brand : C.border}`, color: selAgents.size === 0 ? C.brand : C.muted, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit" }}>
+            👥 Whole Team
+          </button>
+          {agents.filter(a => a.status === "Active").map(a => (
+            <button key={a.id} onClick={() => { toggleAgent(a.name); setGenerated(false); }}
+              style={{ background: selAgents.has(a.name) ? C.brand + "33" : C.bg, border: `1px solid ${selAgents.has(a.name) ? C.brand : C.border}`, color: selAgents.has(a.name) ? C.brand : C.muted, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>
+              {selAgents.has(a.name) ? "✓ " : ""}{a.name}
+            </button>
+          ))}
+        </div>
+        <div style={{ color: C.muted, fontSize: 12, marginBottom: 20 }}>
+          {selAgents.size === 0 ? "All active agents included" : `${selAgents.size} agent${selAgents.size > 1 ? "s" : ""} selected: ${[...selAgents].join(", ")}`}
+        </div>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Btn onClick={generate} style={{ padding: "10px 28px" }}>📊 Generate Report</Btn>
+          {hasData && <Btn onClick={exportReport} color="#27272a" textColor={C.text} style={{ padding: "10px 20px" }}>⬇ Export CSV</Btn>}
+          <Btn onClick={() => { setSelAgents(new Set()); setDateFrom(""); setDateTo(""); setGenerated(false); }} color="transparent" textColor={C.muted} outline style={{ padding: "10px 20px" }}>Reset</Btn>
+        </div>
+      </Card>
+
+      {generated && total === 0 && (
+        <Card style={{ textAlign: "center", padding: 60 }}>
+          <div style={{ color: C.muted, fontSize: 15 }}>No calls found for the selected filters.</div>
+          <div style={{ color: C.subtle, fontSize: 13, marginTop: 8 }}>Try a wider date range or different agents.</div>
+        </Card>
+      )}
+
+      {hasData && (
+        <>
+          <div style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>
+            <span style={{ color: C.text, fontWeight: 600 }}>{dateFrom || "All time"}</span>
+            {(dateFrom || dateTo) && <span> → <span style={{ color: C.text, fontWeight: 600 }}>{dateTo || "today"}</span></span>}
+            {selAgents.size > 0 && <span style={{ color: C.subtle }}> · {[...selAgents].join(", ")}</span>}
+          </div>
+
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+            <StatCard label="Total Calls" value={total} />
+            <StatCard label="Conversions" value={conversions} accent={C.green} />
+            <StatCard label="Win Rate" value={winRate + "%"} accent={C.purple} />
+            <StatCard label="Talk Time" value={totalDur + "m"} accent={C.brand} />
+            <StatCard label="Callbacks Set" value={callbacks} accent={C.yellow} />
+            <StatCard label="Callbacks Done" value={cbDone} accent={C.green} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Outcome Breakdown</div>
+              {ocBreakdown.map(o => (
+                <div key={o.name} style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+                  <div style={{ width: 145, color: C.muted, fontSize: 13 }}>{o.name}</div>
+                  <div style={{ flex: 1 }}><ProgBar value={(o.count / total) * 100} color={OC[o.name]} /></div>
+                  <span style={{ color: C.text, fontSize: 13, fontWeight: 600, minWidth: 28, textAlign: "right" }}>{o.count}</span>
+                </div>
+              ))}
+            </Card>
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Agent Performance</div>
+              {agentBreakdown.map((a, i) => (
+                <div key={a.name} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, paddingBottom: 14, borderBottom: i < agentBreakdown.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                  <div style={{ color: i === 0 ? C.brand : C.subtle, fontWeight: 800, fontSize: 14, width: 22 }}>#{i + 1}</div>
+                  <Av name={a.name} size={34} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{a.name}</div>
+                    <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{a.total} calls · {a.dur}m talk</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ color: C.green, fontWeight: 700, fontSize: 16 }}>{a.wins} wins</div>
+                    <div style={{ color: C.purple, fontSize: 12, fontWeight: 600 }}>{a.rate}% rate</div>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </div>
+
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>Day-by-Day Breakdown</div>
+          <DataTable headers={["Date", "Calls", "Conversions", "Win Rate", "Talk Time", "Agents Active"]}>
+            {dateRows.map(r => (
+              <TR key={r.date}>
+                <td style={{ ...S.td, fontWeight: 700 }}>{r.date}</td>
+                <td style={{ ...S.td, textAlign: "center", color: C.brand, fontWeight: 600 }}>{r.total}</td>
+                <td style={{ ...S.td, textAlign: "center", color: C.green, fontWeight: 600 }}>{r.wins}</td>
+                <td style={{ ...S.td, textAlign: "center" }}><Badge label={r.rate + "%"} color={r.rate >= 20 ? C.green : r.rate >= 10 ? C.yellow : C.muted} /></td>
+                <td style={{ ...S.td, textAlign: "center", color: C.muted }}>{r.dur}m</td>
+                <td style={{ ...S.td, color: C.muted, fontSize: 12 }}>{Object.entries(r.byAgent).map(([n, cnt]) => `${n} (${cnt})`).join(", ")}</td>
+              </TR>
+            ))}
+          </DataTable>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
 // ADMIN PAGE
 // ═══════════════════════════════════════════════════════════
 function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast }) {
@@ -1069,6 +1285,9 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
   const [fOutcome, setFO] = useState("");
   const [fPromo, setFP] = useState("");
   const [fSearch, setFS] = useState("");
+  const [callPage, setCallPage] = useState(0);
+
+  useEffect(() => { setCallPage(0); }, [fAgent, fOutcome, fPromo, fSearch]);
 
   // Import
   const [impModal, setImpModal] = useState(false);
@@ -1107,6 +1326,7 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
     { key: "callbacks", label: `Callbacks${cbPending.length > 0 ? ` (${cbPending.length})` : ""}` },
     { key: "no_answer", label: `Not Answered${adminNoAnswer.length > 0 ? ` (${adminNoAnswer.length})` : ""}` },
     { key: "contacts", label: "Directory" },
+    { key: "reports", label: "📊 Reports" },
   ];
 
   // Promo CRUD
@@ -1473,10 +1693,13 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
               <div><label style={S.lbl}>Campaign</label><select value={fPromo} onChange={e => setFP(e.target.value)} style={S.inp}><option value="">All Campaigns</option>{promos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}</select></div>
               <div><label style={S.lbl}>Outcome</label><select value={fOutcome} onChange={e => setFO(e.target.value)} style={S.inp}><option value="">All Outcomes</option>{Object.keys(OC).map(o => <option key={o} value={o}>{o}</option>)}</select></div>
             </div>
-            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>Showing {filteredCalls.length} of {calls.length}</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>
+              Showing {Math.min(callPage * 10 + 1, filteredCalls.length)}–{Math.min((callPage + 1) * 10, filteredCalls.length)} of {filteredCalls.length} calls
+              {filteredCalls.length < calls.length && <span> (filtered from {calls.length} total)</span>}
+            </div>
             <DataTable headers={["Contact", "Date & Time", "Agent", "Campaign", "Mins", "Outcome", "Callback", "Notes"]}>
               {filteredCalls.length === 0 && <tr><td colSpan={8} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 60 }}>No calls match these filters.</td></tr>}
-              {filteredCalls.map(c => (
+              {filteredCalls.slice(callPage * 10, (callPage + 1) * 10).map(c => (
                 <TR key={c.id}>
                   <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
                   <td style={{ ...S.td, color: C.muted, whiteSpace: "nowrap" }}>{c.call_date} {c.call_time?.slice(0, 5)}</td>
@@ -1491,12 +1714,14 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
                 </TR>
               ))}
             </DataTable>
+            <Paginator page={callPage} total={filteredCalls.length} size={10} onChange={setCallPage} />
           </div>
         )}
 
         {tab === "callbacks" && <CallbacksTab calls={calls} contacts={contacts} isAdmin onRefresh={onRefresh} toast={toast} />}
         {tab === "no_answer" && <NotAnsweredTab calls={calls} contacts={contacts} isAdmin />}
         {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin />}
+        {tab === "reports" && <ReportsTab calls={calls} agents={agents} />}
       </div>
 
       {/* ── PROMO MODAL ── */}
