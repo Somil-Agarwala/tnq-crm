@@ -428,6 +428,9 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
   const [sel, setSel] = useState(new Set());
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cdPage, setCdPage] = useState(0);
+
+  useEffect(() => { setCdPage(0); }, [search, agView]);
 
   const cc = contacts.filter(c => c.assigned_promo === campaign.name);
   const cl = calls.filter(c => c.promo_name === campaign.name);
@@ -510,7 +513,7 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
 
         <DataTable headers={["", "Name", "Phone", "Customer Type", "Priority", "Status", "Assigned At", ""]}>
           {filtered.length === 0 && <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: C.muted, padding: 50 }}>No leads.</td></tr>}
-          {filtered.map(l => (
+          {filtered.slice(cdPage * 10, (cdPage + 1) * 10).map(l => (
             <TR key={l.id} selected={sel.has(l.id)}>
               <td style={{ ...S.td, width: 44 }}><input type="checkbox" checked={sel.has(l.id)} onChange={() => tog(l.id)} style={{ cursor: "pointer" }} /></td>
               <td style={S.td}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><Av name={l.name} size={28} /><span style={{ fontWeight: 600 }}>{l.name}</span></div></td>
@@ -523,6 +526,7 @@ function CampaignDetail({ campaign, contacts, calls, agents, onBack, onRefresh, 
             </TR>
           ))}
         </DataTable>
+        <Paginator page={cdPage} total={filtered.length} size={10} onChange={setCdPage} />
 
         {clearTarget && <ClearModal {...clearTarget} onClose={() => setClearTarget(null)} onDone={() => { onRefresh(); setAgView(null); }} toast={toast} />}
       </div>
@@ -905,52 +909,49 @@ function NotAnsweredTab({ calls, contacts, isAdmin }) {
 // AGENT PAGE
 // ═══════════════════════════════════════════════════════════
 function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout, toast }) {
-  const [tab, setTab] = useState("queue");
-  const [logLead, setLogLead] = useState(null);
+  const [tab, setTab] = useState("leads");
   const [logOpen, setLogOpen] = useState(false);
-  const [visibleLogs, setVisibleLogs] = useState(20);
 
   const mine = calls.filter(c => c.agent_name === user.name);
   const myWins = mine.filter(c => c.outcome === "Converted").length;
-  const myPending = mine.filter(c => c.callback_date && !c.callback_done);
-  const myNoAnswer = mine.filter(c => c.outcome === "No Answer");
+  const myFollowUps = mine.filter(c => c.outcome === "Callback Requested" && !c.callback_done);
+  const myNR = mine.filter(c => ["No Answer", "Busy"].includes(c.outcome));
+  const myInterested = mine.filter(c => ["Very Interested", "Interested"].includes(c.outcome));
+  const myNI = mine.filter(c => c.outcome === "Not Interested");
+  const myConverted = mine.filter(c => c.outcome === "Converted");
+  const myLeads = contacts.filter(c => c.assigned_agent === user.name && c.lead_status === "Pending" && !c.dnc);
   const myRate = mine.length ? Math.round((myWins / mine.length) * 100) : 0;
-  const myLeads = contacts.filter(c => c.assigned_agent === user.name && c.lead_status !== "Contacted" && !c.dnc);
   const myOC = Object.keys(OC).map(o => ({ name: o, count: mine.filter(c => c.outcome === o).length })).filter(o => o.count > 0);
 
-  // New states for Campaign grid & Sorting
-  const [qCamp, setQCamp] = useState(null);
-  const [sortObj, setSortObj] = useState("newest");
-  const qCampaigns = [...new Set(myLeads.map(l => l.assigned_promo).filter(Boolean))];
-
-  // Removed the 'contacts' (Directory) tab entirely to hide Team Activity
   const TABS = [
-    { key: "queue", label: `My Queue (${myLeads.length})` },
-    { key: "stats", label: "My Stats" },
-    { key: "callbacks", label: `Callbacks${myPending.length > 0 ? ` (${myPending.length})` : ""}` },
-    { key: "no_answer", label: `Not Answered${myNoAnswer.length > 0 ? ` (${myNoAnswer.length})` : ""}` }
+    { key: "leads", label: `Leads${myLeads.length > 0 ? ` (${myLeads.length})` : ""}` },
+    { key: "follow_up", label: `Follow Up${myFollowUps.length > 0 ? ` (${myFollowUps.length})` : ""}` },
+    { key: "nr", label: `N R${myNR.length > 0 ? ` (${myNR.length})` : ""}` },
+    { key: "interested", label: `Interested${myInterested.length > 0 ? ` (${myInterested.length})` : ""}` },
+    { key: "ni", label: `N I${myNI.length > 0 ? ` (${myNI.length})` : ""}` },
+    { key: "converted", label: `Converted${myConverted.length > 0 ? ` (${myConverted.length})` : ""}` },
+    { key: "stats", label: "Stats" },
   ];
 
   function Nav() {
     return (
-      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 32 }}>
-          <div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
-          <span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span>
+      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 20px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 20, flexShrink: 0 }}>
+          <div style={{ background: C.brand, borderRadius: 8, width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>📞</div>
+          <span style={{ fontWeight: 800, fontSize: 15 }}>Tanishq CRM</span>
         </div>
-       <div style={{ display: "flex", gap: 2, flex: 1 }}>
+        <div style={{ display: "flex", gap: 0, flex: 1 }}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => { setTab(t.key); setQCamp(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 12px", height: 60, cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
+            <button key={t.key} onClick={() => setTab(t.key)} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 11px", height: 60, cursor: "pointer", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
           ))}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 18, fontWeight: 700, cursor: "pointer" }} title="Log Call">+</button>
-          {/* Prominent Manual Refresh Button */}
-          <button onClick={onRefresh} style={{ background: C.brand, border: "none", color: C.brandText, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }} title="Manual Refresh">↻ Refresh</button>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, borderLeft: `1px solid ${C.border}`, paddingLeft: 16 }}>
-            <Av name={user.name} size={30} />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</span>
-            <button onClick={onLogout} style={{ background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer" }}>Logout</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "7px 13px", fontSize: 18, fontWeight: 700, cursor: "pointer" }} title="Log Call">+</button>
+          <button onClick={onRefresh} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 12px", fontSize: 13, cursor: "pointer" }} title="Refresh">↻</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, borderLeft: `1px solid ${C.border}`, paddingLeft: 12 }}>
+            <Av name={user.name} size={28} />
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{user.name}</span>
+            <button onClick={onLogout} style={{ background: "none", border: "none", color: C.muted, fontSize: 11, cursor: "pointer" }}>Logout</button>
           </div>
         </div>
       </div>
@@ -960,71 +961,13 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
   return (
     <div style={{ background: C.bg, minHeight: "100vh", color: C.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
       <Nav />
-      <div style={{ padding: "32px 36px", maxWidth: 1280, margin: "0 auto" }}>
-
-        {tab === "queue" && (
-          <div>
-            {!qCamp ? (
-              <>
-                <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Campaigns</div>
-                {/* Agent Campaign Grid View */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
-                  {qCampaigns.length === 0 ? (
-                    <Card style={{ textAlign: "center", padding: 80, border: `1px dashed ${C.border}`, gridColumn: "1/-1" }}><div style={{ color: C.muted, fontSize: 15 }}>🎉 Queue empty!</div></Card>
-                  ) : qCampaigns.map(p => {
-                    const cl = myLeads.filter(l => l.assigned_promo === p);
-                    return (
-                      <div key={p} onClick={() => setQCamp(p)} style={{ background: C.card, border: `1px solid ${C.border}`, borderTop: `4px solid ${C.brand}`, borderRadius: 12, padding: 22, cursor: "pointer", transition: "transform .15s" }} onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"} onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
-                        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>{p}</div>
-                        <div style={{ display: "flex", justifyContent: "space-between", color: C.muted, fontSize: 13 }}>
-                          <span>Pending Leads:</span>
-                          <span style={{ color: C.yellow, fontWeight: 700 }}>{cl.length}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            ) : (
-              <>
-                <button onClick={() => setQCamp(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "8px 16px", marginBottom: 24, cursor: "pointer", fontWeight: 600, fontSize: 13 }}>← Back to Campaigns</button>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
-                  <div>
-                    <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>{qCamp} - Action Queue</div>
-                    <div style={{ color: C.muted, fontSize: 13 }}>Contacts assigned to you. Log an outcome to clear them.</div>
-                  </div>
-                  {/* Sorting Filter for Queue */}
-                  <select value={sortObj} onChange={e => setSortObj(e.target.value)} style={{ ...S.inp, width: 160 }}>
-                    <option value="newest">Sort: Newest First</option>
-                    <option value="name">Sort: Name A-Z</option>
-                    <option value="priority">Sort: Priority</option>
-                  </select>
-                </div>
-                {myLeads.filter(l => l.assigned_promo === qCamp)
-                  .sort((a, b) => {
-                    if (sortObj === "priority") return (b.priority || "").localeCompare(a.priority || "");
-                    if (sortObj === "name") return a.name.localeCompare(b.name);
-                    return new Date(b.assigned_at || 0) - new Date(a.assigned_at || 0); // newest fallback
-                  })
-                  .map(l => (
-                  <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "18px 24px", marginBottom: 14, display: "flex", alignItems: "center", gap: 20 }}>
-                    <Av name={l.name} size={46} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 800, fontSize: 17 }}>{l.name}</div>
-                      <div style={{ color: C.muted, fontSize: 13, marginTop: 4, display: "flex", gap: 20, flexWrap: "wrap" }}>
-                        <span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{l.phone || "No phone"}</span></span>
-                        {l.customer_type && <span>🏢 {l.customer_type}</span>}
-                        {l.priority && <span>⭐ {l.priority}</span>}
-                      </div>
-                    </div>
-                    <button onClick={() => setLogLead(l)} style={{ background: "#052e16", color: C.green, border: `1px solid ${C.green}44`, borderRadius: 8, padding: "12px 24px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>📞 Dial & Log</button>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-
+      <div style={{ padding: "28px 32px", maxWidth: 1200, margin: "0 auto" }}>
+        {tab === "leads" && <LeadsTab contacts={contacts} calls={mine} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin={false} agentName={user.name} />}
+        {tab === "follow_up" && <FollowUpTab calls={mine} contacts={contacts} isAdmin={false} agentName={user.name} onRefresh={onRefresh} toast={toast} promos={promos} agents={agents} />}
+        {tab === "nr" && <NRTab calls={mine} contacts={contacts} isAdmin={false} agentName={user.name} onRefresh={onRefresh} toast={toast} promos={promos} agents={agents} />}
+        {tab === "interested" && <InterestedTab calls={mine} contacts={contacts} isAdmin={false} agentName={user.name} onRefresh={onRefresh} toast={toast} promos={promos} agents={agents} />}
+        {tab === "ni" && <NITab calls={mine} contacts={contacts} isAdmin={false} agentName={user.name} agents={agents} />}
+        {tab === "converted" && <ConvertedTab calls={mine} contacts={contacts} isAdmin={false} agentName={user.name} agents={agents} />}
         {tab === "stats" && (
           <div>
             <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>My Performance</div>
@@ -1032,7 +975,8 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
               <StatCard label="Total Calls" value={mine.length} />
               <StatCard label="Conversions" value={myWins} accent={C.green} />
               <StatCard label="Win Rate" value={myRate + "%"} accent={C.purple} />
-              <StatCard label="Callbacks" value={myPending.length} accent={C.yellow} />
+              <StatCard label="Follow Ups" value={myFollowUps.length} accent={C.yellow} />
+              <StatCard label="Interested" value={myInterested.length} accent={C.brand} />
             </div>
             {myOC.length > 0 && (
               <Card style={{ marginBottom: 24 }}>
@@ -1047,44 +991,326 @@ function AgentPage({ user, contacts, calls, agents, promos, onRefresh, onLogout,
               </Card>
             )}
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 14 }}>My Call History</div>
-            <DataTable headers={["Contact", "Date", "Campaign", "Dur", "Outcome", "Interest", "Notes"]}>
-              {mine.length === 0 && <tr><td colSpan={7} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls yet.</td></tr>}
-              {mine.slice(0, visibleLogs).map(c => (
+            <DataTable headers={["Contact", "Date", "Campaign", "Dur", "Outcome", "Notes"]}>
+              {mine.length === 0 && <tr><td colSpan={6} style={{ ...S.td, color: C.muted, textAlign: "center", padding: 50 }}>No calls yet.</td></tr>}
+              {mine.slice(0, 20).map(c => (
                 <TR key={c.id}>
                   <td style={{ ...S.td, fontWeight: 600 }}>{c.contact_name}</td>
                   <td style={{ ...S.td, color: C.muted }}>{c.call_date}</td>
                   <td style={S.td}>{c.promo_name}</td>
                   <td style={{ ...S.td, color: C.muted, textAlign: "center" }}>{c.duration_minutes ? c.duration_minutes + "m" : "—"}</td>
                   <td style={S.td}><Badge label={c.outcome} color={OC[c.outcome] || C.muted} /></td>
-                  <td style={S.td}><Badge label={c.interest_level} color={c.interest_level === "High" ? C.green : c.interest_level === "Medium" ? C.yellow : C.muted} /></td>
-                  <td style={{ ...S.td, color: C.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
-              </TR>
-              ))}
-            </DataTable>
-            
-            {visibleLogs < mine.length && (
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
-                <Btn 
-                  onClick={() => setVisibleLogs(v => v + 20)} 
-                  color="transparent" 
-                  textColor={C.text} 
-                  outline
-                >
-                  Load More ({mine.length - visibleLogs} remaining) ↓
-                </Btn>
-              </div>
-            )}
-            
-          </div>
-        )}
-
-        {tab === "callbacks" && <CallbacksTab calls={mine} contacts={contacts} isAdmin={false} onRefresh={onRefresh} toast={toast} />}
-        {tab === "no_answer" && <NotAnsweredTab calls={mine} contacts={contacts} isAdmin={false} />}
-
+                  <td style={{ ...S.td, color: C.muted, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes}</td>
+                </TR>
+              ))}
+            </DataTable>
+          </div>
+        )}
       </div>
-
       {logOpen && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} prefill={null} onClose={() => setLogOpen(false)} onDone={onRefresh} toast={toast} />}
-      {logLead && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={user.name} prefill={logLead} onClose={() => setLogLead(null)} onDone={onRefresh} toast={toast} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// EDIT CALL MODAL
+// ═══════════════════════════════════════════════════════════
+function EditCallModal({ call, onClose, onDone, toast }) {
+  const [f, setF] = useState({ outcome: call.outcome || "Interested", interest_level: call.interest_level || "Medium", callback_date: call.callback_date || "", notes: call.notes || "" });
+  const [saving, setSaving] = useState(false);
+  const needsCB = f.outcome === "Callback Requested";
+  const ok = !needsCB || f.callback_date;
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
+  async function save() {
+    if (!ok) return; setSaving(true);
+    try { await db.update("call_logs", call.id, { outcome: f.outcome, interest_level: f.interest_level, callback_date: f.callback_date || null, notes: f.notes, callback_done: false }); toast("Updated ✓"); onDone(); onClose(); }
+    catch { toast("Error.", "error"); } finally { setSaving(false); }
+  }
+  return (
+    <Modal title="✏️ Edit Call Record" onClose={onClose}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+        <div><label style={S.lbl}>Contact</label><input value={call.contact_name} disabled style={{ ...S.inp, opacity: .6 }} /></div>
+        <div><label style={S.lbl}>Agent</label><input value={call.agent_name} disabled style={{ ...S.inp, opacity: .6 }} /></div>
+        <div><label style={S.lbl}>Outcome</label><select value={f.outcome} onChange={set("outcome")} style={S.inp}>{Object.keys(OC).map(o => <option key={o}>{o}</option>)}</select></div>
+        <div><label style={S.lbl}>Interest Level</label><select value={f.interest_level} onChange={set("interest_level")} style={S.inp}>{["High", "Medium", "Low"].map(i => <option key={i}>{i}</option>)}</select></div>
+        <div style={{ gridColumn: "span 2" }}>
+          <label style={S.lbl}>Callback Date {needsCB ? <span style={{ color: C.red }}>*Required</span> : <span style={{ color: C.muted }}>(Optional)</span>}</label>
+          <input type="date" value={f.callback_date} onChange={set("callback_date")} style={{ ...S.inp, border: needsCB && !f.callback_date ? `1px solid ${C.red}` : `1px solid ${C.border}` }} />
+        </div>
+        <div style={{ gridColumn: "span 2" }}><label style={S.lbl}>Notes</label><input value={f.notes} onChange={set("notes")} style={S.inp} placeholder="Update notes..." /></div>
+      </div>
+      <div style={{ display: "flex", gap: 12, marginTop: 28 }}>
+        <Btn onClick={save} disabled={saving || !ok} style={{ flex: 1, padding: 12 }}>{saving ? "Saving..." : "Save Changes"}</Btn>
+        <Btn onClick={onClose} color="transparent" textColor={C.text} outline style={{ flex: 1, padding: 12 }}>Cancel</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// LEADS TAB
+// ═══════════════════════════════════════════════════════════
+function LeadsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmin, agentName }) {
+  const [page, setPage] = useState(0); const [search, setSearch] = useState(""); const [fAgent, setFAgent] = useState(""); const [fPromo, setFPromo] = useState(""); const [logLead, setLogLead] = useState(null); const PAGE = 10;
+  const leads = useMemo(() => contacts.filter(c => {
+    if (c.lead_status !== "Pending" || c.dnc) return false;
+    if (!isAdmin && c.assigned_agent !== agentName) return false;
+    if (isAdmin && fAgent && c.assigned_agent !== fAgent) return false;
+    if (fPromo && c.assigned_promo !== fPromo) return false;
+    const q = search.toLowerCase();
+    if (q && !(c.name || "").toLowerCase().includes(q) && !(c.phone || "").includes(q)) return false;
+    return true;
+  }), [contacts, isAdmin, agentName, fAgent, fPromo, search]);
+  useEffect(() => setPage(0), [search, fAgent, fPromo]);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800 }}>Leads</div><div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{leads.length} pending</div></div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search..." style={{ ...S.inp, maxWidth: 200 }} />
+          {isAdmin && <select value={fAgent} onChange={e => setFAgent(e.target.value)} style={{ ...S.inp, width: 150 }}><option value="">All Agents</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select>}
+          <select value={fPromo} onChange={e => setFPromo(e.target.value)} style={{ ...S.inp, width: 160 }}><option value="">All Campaigns</option>{promos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}</select>
+        </div>
+      </div>
+      {leads.length === 0 ? <div style={{ textAlign: "center", padding: 80 }}><div style={{ fontSize: 48, marginBottom: 12 }}>✅</div><div style={{ color: C.muted, fontSize: 15 }}>Queue empty — all leads called.</div></div> : (
+        <>{leads.slice(page * PAGE, (page + 1) * PAGE).map(l => (
+          <div key={l.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "16px 20px", marginBottom: 10, display: "flex", alignItems: "center", gap: 16, boxShadow: "0 2px 12px rgba(0,0,0,.25)" }}>
+            <Av name={l.name} size={42} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{l.name}</div>
+              <div style={{ color: C.muted, fontSize: 13, marginTop: 3, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                <span>📱 <span style={{ color: C.text, fontWeight: 600 }}>{l.phone || "No phone"}</span></span>
+                {l.customer_type && <span>🏢 {l.customer_type}</span>}
+                {l.priority && <span>⭐ {l.priority}</span>}
+                {isAdmin && l.assigned_agent && <span style={{ color: C.brand, fontWeight: 600 }}>👤 {l.assigned_agent}</span>}
+                <span style={{ color: C.purple }}>📋 {l.assigned_promo || "—"}</span>
+              </div>
+            </div>
+            <button onClick={() => setLogLead(l)} style={{ background: "linear-gradient(135deg,#052e16,#064e3b)", color: C.green, border: `1px solid ${C.green}55`, borderRadius: 8, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>📞 Log</button>
+          </div>
+        ))}<Paginator page={page} total={leads.length} size={PAGE} onChange={setPage} /></>
+      )}
+      {logLead && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={isAdmin ? null : agentName} prefill={logLead} onClose={() => setLogLead(null)} onDone={onRefresh} toast={toast} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// FOLLOW UP TAB
+// ═══════════════════════════════════════════════════════════
+function FollowUpTab({ calls, contacts, isAdmin, agentName, onRefresh, toast, promos, agents }) {
+  const [page, setPage] = useState(0); const [editCall, setEditCall] = useState(null); const [logContact, setLogContact] = useState(null); const [fAgent, setFAgent] = useState(""); const PAGE = 10;
+  const today = new Date().toISOString().slice(0, 10);
+  const followUps = useMemo(() => calls.filter(c => c.outcome === "Callback Requested" && !c.callback_done).filter(c => isAdmin ? (!fAgent || c.agent_name === fAgent) : c.agent_name === agentName).sort((a, b) => (a.callback_date || "9").localeCompare(b.callback_date || "9")), [calls, isAdmin, agentName, fAgent]);
+  const overdue = followUps.filter(c => { const d = c.call_date ? Math.floor((Date.now() - new Date(c.call_date)) / 86400000) : 0; return d >= 10; });
+  useEffect(() => setPage(0), [fAgent]);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800 }}>Follow Up</div><div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{followUps.length} pending {overdue.length > 0 && <span style={{ color: C.red, fontWeight: 700, marginLeft: 10 }}>⚠️ {overdue.length} overdue</span>}</div></div>
+        {isAdmin && <select value={fAgent} onChange={e => setFAgent(e.target.value)} style={{ ...S.inp, width: 180 }}><option value="">All Agents</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select>}
+      </div>
+      {overdue.length > 0 && isAdmin && <div style={{ background: C.red + "15", border: `1px solid ${C.red}44`, borderRadius: 10, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14 }}><span style={{ fontSize: 22 }}>🚨</span><div><div style={{ color: C.red, fontWeight: 700, fontSize: 14 }}>{overdue.length} follow-up{overdue.length > 1 ? "s" : ""} crossed the 10-day mark</div><div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>These contacts haven't been called back within 10 days.</div></div></div>}
+      {followUps.length === 0 ? <div style={{ textAlign: "center", padding: 80 }}><div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div><div style={{ color: C.muted, fontSize: 15 }}>No pending follow-ups.</div></div> : (
+        <>{followUps.slice(page * PAGE, (page + 1) * PAGE).map(c => {
+          const ci = contacts.find(x => x.name === c.contact_name);
+          const phone = ci?.phone || "No phone";
+          const days = c.call_date ? Math.floor((Date.now() - new Date(c.call_date)) / 86400000) : 0;
+          const pct = Math.min((days / 10) * 100, 100);
+          const tc = days >= 10 ? C.red : days >= 7 ? C.yellow : C.green;
+          const isDue = c.callback_date && c.callback_date <= today;
+          const isOD = days >= 10;
+          return (
+            <div key={c.id} style={{ background: C.card, border: `1px solid ${isOD ? C.red + "55" : C.yellow + "33"}`, borderLeft: `4px solid ${isOD ? C.red : C.yellow}`, borderRadius: 12, padding: "16px 20px", marginBottom: 10, boxShadow: isOD ? `0 0 0 1px ${C.red}22` : "0 2px 12px rgba(0,0,0,.25)" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                <Av name={c.contact_name} size={42} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+                    <span style={{ fontWeight: 700, fontSize: 16 }}>{c.contact_name}</span>
+                    <span style={{ color: C.muted, fontSize: 13 }}>📱 {phone}</span>
+                    {isOD && <Badge label="OVERDUE" color={C.red} />}
+                    {isDue && !isOD && <Badge label="Due Today" color={C.yellow} />}
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                    {isAdmin && <span style={{ color: C.brand, fontWeight: 600 }}>👤 {c.agent_name}</span>}
+                    <span>📋 {c.promo_name}</span>
+                    {c.callback_date && <span style={{ color: C.yellow }}>📅 Due: {c.callback_date}</span>}
+                  </div>
+                  {c.notes && <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginBottom: 8 }}>"{c.notes}"</div>}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.muted, marginBottom: 3 }}>
+                      <span>Since last call: {days}d</span>
+                      {days >= 10 ? <span style={{ color: C.red, fontWeight: 700 }}>⚠️ Overdue by {days - 10}d</span> : <span style={{ color: tc, fontWeight: 600 }}>{10 - days}d left</span>}
+                    </div>
+                    <div style={{ background: "#27272a", borderRadius: 999, height: 5, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", background: tc, borderRadius: 999 }} /></div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 86 }}>
+                  <button onClick={() => setLogContact(ci || { name: c.contact_name, assigned_promo: c.promo_name })} style={{ background: "linear-gradient(135deg,#052e16,#064e3b)", color: C.green, border: `1px solid ${C.green}55`, borderRadius: 8, padding: "8px 0", fontWeight: 700, fontSize: 12, cursor: "pointer", width: "100%" }}>📞 Log</button>
+                  <button onClick={() => setEditCall(c)} style={{ background: "#27272a", color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 0", fontWeight: 600, fontSize: 12, cursor: "pointer", width: "100%" }}>✏️ Edit</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}<Paginator page={page} total={followUps.length} size={PAGE} onChange={setPage} /></>
+      )}
+      {editCall && <EditCallModal call={editCall} onClose={() => setEditCall(null)} onDone={onRefresh} toast={toast} />}
+      {logContact && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={isAdmin ? null : agentName} prefill={logContact} onClose={() => setLogContact(null)} onDone={onRefresh} toast={toast} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// N R TAB (NOT REACHABLE)
+// ═══════════════════════════════════════════════════════════
+function NRTab({ calls, contacts, isAdmin, agentName, onRefresh, toast, promos, agents }) {
+  const [page, setPage] = useState(0); const [editCall, setEditCall] = useState(null); const [logContact, setLogContact] = useState(null); const [fAgent, setFAgent] = useState(""); const PAGE = 10;
+  const nrCalls = useMemo(() => calls.filter(c => ["No Answer", "Busy"].includes(c.outcome)).filter(c => isAdmin ? (!fAgent || c.agent_name === fAgent) : c.agent_name === agentName).sort((a, b) => (b.call_date || "").localeCompare(a.call_date || "")), [calls, isAdmin, agentName, fAgent]);
+  useEffect(() => setPage(0), [fAgent]);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800 }}>Not Reachable</div><div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{nrCalls.length} calls — No Answer or Busy</div></div>
+        {isAdmin && <select value={fAgent} onChange={e => setFAgent(e.target.value)} style={{ ...S.inp, width: 180 }}><option value="">All Agents</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select>}
+      </div>
+      {nrCalls.length === 0 ? <div style={{ textAlign: "center", padding: 80 }}><div style={{ fontSize: 48, marginBottom: 12 }}>📵</div><div style={{ color: C.muted, fontSize: 15 }}>No missed calls on record.</div></div> : (
+        <>{nrCalls.slice(page * PAGE, (page + 1) * PAGE).map(c => {
+          const ci = contacts.find(x => x.name === c.contact_name);
+          const phone = ci?.phone || "No phone";
+          const isNA = c.outcome === "No Answer";
+          return (
+            <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${isNA ? C.subtle : C.yellow}`, borderRadius: 12, padding: "16px 20px", marginBottom: 10, display: "flex", alignItems: "center", gap: 14, boxShadow: "0 2px 12px rgba(0,0,0,.25)" }}>
+              <Av name={c.contact_name} size={42} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{c.contact_name} <span style={{ color: C.muted, fontSize: 13, fontWeight: 400 }}>📱 {phone}</span></div>
+                <div style={{ color: C.muted, fontSize: 12, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  {isAdmin && <span style={{ color: C.brand, fontWeight: 600 }}>👤 {c.agent_name}</span>}
+                  <span>📋 {c.promo_name}</span><span>📅 {c.call_date} {c.call_time?.slice(0,5)}</span>
+                </div>
+                {c.notes && <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginTop: 5 }}>"{c.notes}"</div>}
+              </div>
+              <Badge label={c.outcome} color={isNA ? C.subtle : C.yellow} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 86 }}>
+                <button onClick={() => setLogContact(ci || { name: c.contact_name, assigned_promo: c.promo_name })} style={{ background: "linear-gradient(135deg,#052e16,#064e3b)", color: C.green, border: `1px solid ${C.green}55`, borderRadius: 8, padding: "8px 0", fontWeight: 700, fontSize: 12, cursor: "pointer", width: "100%" }}>📞 Log</button>
+                <button onClick={() => setEditCall(c)} style={{ background: "#27272a", color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 0", fontWeight: 600, fontSize: 12, cursor: "pointer", width: "100%" }}>✏️ Edit</button>
+              </div>
+            </div>
+          );
+        })}<Paginator page={page} total={nrCalls.length} size={PAGE} onChange={setPage} /></>
+      )}
+      {editCall && <EditCallModal call={editCall} onClose={() => setEditCall(null)} onDone={onRefresh} toast={toast} />}
+      {logContact && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={isAdmin ? null : agentName} prefill={logContact} onClose={() => setLogContact(null)} onDone={onRefresh} toast={toast} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// INTERESTED TAB
+// ═══════════════════════════════════════════════════════════
+function InterestedTab({ calls, contacts, isAdmin, agentName, onRefresh, toast, promos, agents }) {
+  const [page, setPage] = useState(0); const [editCall, setEditCall] = useState(null); const [logContact, setLogContact] = useState(null); const [fAgent, setFAgent] = useState(""); const PAGE = 10;
+  const intCalls = useMemo(() => calls.filter(c => ["Very Interested", "Interested"].includes(c.outcome)).filter(c => isAdmin ? (!fAgent || c.agent_name === fAgent) : c.agent_name === agentName).sort((a, b) => (b.call_date || "").localeCompare(a.call_date || "")), [calls, isAdmin, agentName, fAgent]);
+  useEffect(() => setPage(0), [fAgent]);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800 }}>Interested</div><div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{intCalls.length} contacts showing interest</div></div>
+        {isAdmin && <select value={fAgent} onChange={e => setFAgent(e.target.value)} style={{ ...S.inp, width: 180 }}><option value="">All Agents</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select>}
+      </div>
+      {intCalls.length === 0 ? <div style={{ textAlign: "center", padding: 80 }}><div style={{ fontSize: 48, marginBottom: 12 }}>💎</div><div style={{ color: C.muted, fontSize: 15 }}>No interested contacts yet.</div></div> : (
+        <>{intCalls.slice(page * PAGE, (page + 1) * PAGE).map(c => {
+          const ci = contacts.find(x => x.name === c.contact_name);
+          const phone = ci?.phone || "No phone";
+          const isVI = c.outcome === "Very Interested";
+          return (
+            <div key={c.id} style={{ background: C.card, border: `1px solid ${isVI ? C.brand + "44" : C.purple + "33"}`, borderLeft: `4px solid ${isVI ? C.brand : C.purple}`, borderRadius: 12, padding: "16px 20px", marginBottom: 10, display: "flex", alignItems: "center", gap: 14, boxShadow: `0 2px 16px ${isVI ? C.brand : C.purple}18` }}>
+              <Av name={c.contact_name} size={42} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{c.contact_name} <span style={{ color: C.muted, fontSize: 13, fontWeight: 400 }}>📱 {phone}</span></div>
+                <div style={{ color: C.muted, fontSize: 12, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  {isAdmin && <span style={{ color: C.brand, fontWeight: 600 }}>👤 {c.agent_name}</span>}
+                  <span>📋 {c.promo_name}</span><span>📅 {c.call_date}</span>
+                  <Badge label={c.interest_level} color={c.interest_level === "High" ? C.green : c.interest_level === "Medium" ? C.yellow : C.muted} />
+                </div>
+                {c.notes && <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginTop: 5 }}>"{c.notes}"</div>}
+              </div>
+              <Badge label={c.outcome} color={isVI ? C.brand : C.purple} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 86 }}>
+                <button onClick={() => setLogContact(ci || { name: c.contact_name, assigned_promo: c.promo_name })} style={{ background: "linear-gradient(135deg,#052e16,#064e3b)", color: C.green, border: `1px solid ${C.green}55`, borderRadius: 8, padding: "8px 0", fontWeight: 700, fontSize: 12, cursor: "pointer", width: "100%" }}>📞 Log</button>
+                <button onClick={() => setEditCall(c)} style={{ background: "#27272a", color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 0", fontWeight: 600, fontSize: 12, cursor: "pointer", width: "100%" }}>✏️ Edit</button>
+              </div>
+            </div>
+          );
+        })}<Paginator page={page} total={intCalls.length} size={PAGE} onChange={setPage} /></>
+      )}
+      {editCall && <EditCallModal call={editCall} onClose={() => setEditCall(null)} onDone={onRefresh} toast={toast} />}
+      {logContact && <LogCallModal contacts={contacts} promos={promos} agents={agents} defaultAgent={isAdmin ? null : agentName} prefill={logContact} onClose={() => setLogContact(null)} onDone={onRefresh} toast={toast} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// N I TAB (NOT INTERESTED)
+// ═══════════════════════════════════════════════════════════
+function NITab({ calls, contacts, isAdmin, agentName, agents }) {
+  const [page, setPage] = useState(0); const [fAgent, setFAgent] = useState(""); const PAGE = 10;
+  const niCalls = useMemo(() => calls.filter(c => c.outcome === "Not Interested").filter(c => isAdmin ? (!fAgent || c.agent_name === fAgent) : c.agent_name === agentName).sort((a, b) => (b.call_date || "").localeCompare(a.call_date || "")), [calls, isAdmin, agentName, fAgent]);
+  useEffect(() => setPage(0), [fAgent]);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800 }}>Not Interested</div><div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{niCalls.length} contacts</div></div>
+        {isAdmin && <select value={fAgent} onChange={e => setFAgent(e.target.value)} style={{ ...S.inp, width: 180 }}><option value="">All Agents</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select>}
+      </div>
+      {niCalls.length === 0 ? <div style={{ textAlign: "center", padding: 80 }}><div style={{ fontSize: 48, marginBottom: 12 }}>😊</div><div style={{ color: C.muted, fontSize: 15 }}>No rejections yet.</div></div> : (
+        <>{niCalls.slice(page * PAGE, (page + 1) * PAGE).map(c => {
+          const ci = contacts.find(x => x.name === c.contact_name); const phone = ci?.phone || "No phone";
+          return (
+            <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `4px solid ${C.subtle}`, borderRadius: 12, padding: "16px 20px", marginBottom: 10, display: "flex", alignItems: "center", gap: 14, opacity: 0.85 }}>
+              <Av name={c.contact_name} size={40} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 15, color: C.muted, marginBottom: 3 }}>{c.contact_name} <span style={{ fontSize: 13, fontWeight: 400 }}>📱 {phone}</span></div>
+                <div style={{ color: C.subtle, fontSize: 12, display: "flex", gap: 14, flexWrap: "wrap" }}>{isAdmin && <span style={{ color: C.brand + "99", fontWeight: 600 }}>👤 {c.agent_name}</span>}<span>{c.promo_name}</span><span>{c.call_date}</span></div>
+                {c.notes && <div style={{ color: C.subtle, fontSize: 12, fontStyle: "italic", marginTop: 4 }}>"{c.notes}"</div>}
+              </div>
+              <Badge label="Not Interested" color={C.subtle} />
+            </div>
+          );
+        })}<Paginator page={page} total={niCalls.length} size={PAGE} onChange={setPage} /></>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONVERTED TAB
+// ═══════════════════════════════════════════════════════════
+function ConvertedTab({ calls, contacts, isAdmin, agentName, agents }) {
+  const [page, setPage] = useState(0); const [fAgent, setFAgent] = useState(""); const PAGE = 10;
+  const convCalls = useMemo(() => calls.filter(c => c.outcome === "Converted").filter(c => isAdmin ? (!fAgent || c.agent_name === fAgent) : c.agent_name === agentName).sort((a, b) => (b.call_date || "").localeCompare(a.call_date || "")), [calls, isAdmin, agentName, fAgent]);
+  useEffect(() => setPage(0), [fAgent]);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div><div style={{ fontSize: 22, fontWeight: 800 }}>Converted 🏆</div><div style={{ color: C.muted, fontSize: 13, marginTop: 4 }}>{convCalls.length} conversions</div></div>
+        {isAdmin && <select value={fAgent} onChange={e => setFAgent(e.target.value)} style={{ ...S.inp, width: 180 }}><option value="">All Agents</option>{agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}</select>}
+      </div>
+      {convCalls.length === 0 ? <div style={{ textAlign: "center", padding: 80 }}><div style={{ fontSize: 48, marginBottom: 12 }}>🎯</div><div style={{ color: C.muted, fontSize: 15 }}>No conversions yet — keep pushing!</div></div> : (
+        <>{convCalls.slice(page * PAGE, (page + 1) * PAGE).map(c => {
+          const ci = contacts.find(x => x.name === c.contact_name); const phone = ci?.phone || "No phone";
+          return (
+            <div key={c.id} style={{ background: `linear-gradient(135deg, ${C.card} 60%, #052e16)`, border: `1px solid ${C.green}44`, borderLeft: `4px solid ${C.green}`, borderRadius: 12, padding: "16px 20px", marginBottom: 10, display: "flex", alignItems: "center", gap: 14, boxShadow: `0 2px 20px ${C.green}18` }}>
+              <div style={{ background: C.green + "22", borderRadius: "50%", width: 42, height: 42, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🏆</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{c.contact_name} <span style={{ color: C.muted, fontSize: 13, fontWeight: 400 }}>📱 {phone}</span></div>
+                <div style={{ color: C.muted, fontSize: 12, display: "flex", gap: 14, flexWrap: "wrap" }}>{isAdmin && <span style={{ color: C.green, fontWeight: 600 }}>👤 {c.agent_name}</span>}<span>📋 {c.promo_name}</span><span>📅 {c.call_date}</span>{c.duration_minutes && <span>⏱ {c.duration_minutes}m</span>}</div>
+                {c.notes && <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic", marginTop: 4 }}>"{c.notes}"</div>}
+              </div>
+              <Badge label="Converted ✓" color={C.green} />
+            </div>
+          );
+        })}<Paginator page={page} total={convCalls.length} size={PAGE} onChange={setPage} /></>
+      )}
     </div>
   );
 }
@@ -1318,15 +1544,31 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
     return true;
   }), [calls, fAgent, fOutcome, fPromo, fSearch]);
 
+  const followUpAll = calls.filter(c => c.outcome === "Callback Requested" && !c.callback_done);
+  const nrAll = calls.filter(c => ["No Answer", "Busy"].includes(c.outcome));
+  const intAll = calls.filter(c => ["Very Interested", "Interested"].includes(c.outcome));
+  const niAll = calls.filter(c => c.outcome === "Not Interested");
+  const convAll = calls.filter(c => c.outcome === "Converted");
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueCount = followUpAll.filter(c => {
+    const days = c.call_date ? Math.floor((Date.now() - new Date(c.call_date)) / 86400000) : 0;
+    return days >= 10;
+  }).length;
+  const pendingLeads = contacts.filter(c => c.lead_status === "Pending" && !c.dnc);
+
   const TABS = [
     { key: "dashboard", label: "Dashboard" },
     { key: "campaigns", label: "Campaigns" },
     { key: "agents", label: "Team" },
+    { key: "leads", label: `Leads${pendingLeads.length > 0 ? ` (${pendingLeads.length})` : ""}` },
+    { key: "follow_up", label: `Follow Up${followUpAll.length > 0 ? ` (${followUpAll.length})${overdueCount > 0 ? " ⚠️" : ""}` : ""}` },
+    { key: "nr", label: `N R${nrAll.length > 0 ? ` (${nrAll.length})` : ""}` },
+    { key: "interested", label: `Interested${intAll.length > 0 ? ` (${intAll.length})` : ""}` },
+    { key: "ni", label: `N I${niAll.length > 0 ? ` (${niAll.length})` : ""}` },
+    { key: "converted", label: `Converted${convAll.length > 0 ? ` (${convAll.length})` : ""}` },
     { key: "calls", label: "Call Logs" },
-    { key: "callbacks", label: `Callbacks${cbPending.length > 0 ? ` (${cbPending.length})` : ""}` },
-    { key: "no_answer", label: `Not Answered${adminNoAnswer.length > 0 ? ` (${adminNoAnswer.length})` : ""}` },
     { key: "contacts", label: "Directory" },
-    { key: "reports", label: "📊 Reports" },
+    { key: "reports", label: "Reports" },
   ];
 
   // Promo CRUD
@@ -1399,21 +1641,21 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
 
   function Nav() {
     return (
-      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 16px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 10 }}>
+      <div style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: "0 32px", display: "flex", alignItems: "center", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 10, flexShrink: 0 }}>
           <div style={{ background: C.brand, borderRadius: 8, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📞</div>
           <span style={{ fontWeight: 800, fontSize: 16 }}>Tanishq CRM</span>
           <Badge label="ADMIN" color={C.brand} />
         </div>
         <div style={{ display: "flex", gap: 0, flex: 1 }}>
           {TABS.map(t => (
-            <button key={t.key} onClick={() => { setTab(t.key); setCampDetail(null); setAgentInspect(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 9px", height: 60, cursor: "pointer", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
+            <button key={t.key} onClick={() => { setTab(t.key); setCampDetail(null); setAgentInspect(null); }} style={{ background: "none", border: "none", color: tab === t.key ? C.text : C.muted, borderBottom: tab === t.key ? `2px solid ${C.brand}` : "2px solid transparent", padding: "0 9px", height: 60, cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{t.label}</button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
-          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 18, fontWeight: 700, cursor: "pointer" }} title="Log Call">+</button>
-          <button onClick={onRefresh} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 14px", fontSize: 13, cursor: "pointer" }} title="Refresh data">↻</button>
-          <button onClick={onLogout} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>Logout</button>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button onClick={() => setLogOpen(true)} style={{ background: C.text, color: C.bg, border: "none", borderRadius: 8, padding: "7px 13px", fontSize: 18, fontWeight: 700, cursor: "pointer" }} title="Log Call">+</button>
+          <button onClick={onRefresh} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 12px", fontSize: 13, cursor: "pointer" }} title="Refresh">↻</button>
+          <button onClick={onLogout} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "7px 12px", fontSize: 11, cursor: "pointer" }}>Logout</button>
         </div>
       </div>
     );
@@ -1427,13 +1669,23 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
         {/* ── DASHBOARD ── */}
         {tab === "dashboard" && (
           <div>
-            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 24 }}>Command Center</div>
+            <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 20 }}>Command Center</div>
+            {overdueCount > 0 && (
+              <div onClick={() => setTab("follow_up")} style={{ background: C.red + "15", border: `1px solid ${C.red}44`, borderRadius: 10, padding: "14px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}>
+                <span style={{ fontSize: 22 }}>🚨</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: C.red, fontWeight: 700, fontSize: 14 }}>{overdueCount} follow-up{overdueCount > 1 ? "s" : ""} overdue — 10+ days without contact</div>
+                  <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Click to view → Follow Up tab</div>
+                </div>
+                <span style={{ color: C.red, fontSize: 18 }}>→</span>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 32 }}>
-              <StatCard label="Contacts" value={contacts.length} />
+              <StatCard label="Total Leads" value={pendingLeads.length} />
               <StatCard label="Total Calls" value={calls.length} accent={C.brand} />
               <StatCard label="Conversions" value={conversions} accent={C.green} />
               <StatCard label="Win Rate" value={convRate + "%"} accent={C.purple} />
-              <StatCard label="Callbacks" value={cbPending.length} accent={C.yellow} />
+              <StatCard label="Follow Ups" value={followUpAll.length} accent={C.yellow} />
               <StatCard label="Active Campaigns" value={activePromos.length} accent="#f97316" />
             </div>
 
@@ -1718,8 +1970,12 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
           </div>
         )}
 
-        {tab === "callbacks" && <CallbacksTab calls={calls} contacts={contacts} isAdmin onRefresh={onRefresh} toast={toast} />}
-        {tab === "no_answer" && <NotAnsweredTab calls={calls} contacts={contacts} isAdmin />}
+        {tab === "leads" && <LeadsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin agentName={null} />}
+        {tab === "follow_up" && <FollowUpTab calls={calls} contacts={contacts} isAdmin agentName={null} onRefresh={onRefresh} toast={toast} promos={promos} agents={agents} />}
+        {tab === "nr" && <NRTab calls={calls} contacts={contacts} isAdmin agentName={null} onRefresh={onRefresh} toast={toast} promos={promos} agents={agents} />}
+        {tab === "interested" && <InterestedTab calls={calls} contacts={contacts} isAdmin agentName={null} onRefresh={onRefresh} toast={toast} promos={promos} agents={agents} />}
+        {tab === "ni" && <NITab calls={calls} contacts={contacts} isAdmin agentName={null} agents={agents} />}
+        {tab === "converted" && <ConvertedTab calls={calls} contacts={contacts} isAdmin agentName={null} agents={agents} />}
         {tab === "contacts" && <ContactsTab contacts={contacts} calls={calls} agents={agents} promos={promos} onRefresh={onRefresh} toast={toast} isAdmin />}
         {tab === "reports" && <ReportsTab calls={calls} agents={agents} />}
       </div>
