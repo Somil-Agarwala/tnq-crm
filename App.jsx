@@ -1057,6 +1057,7 @@ function LeadsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmin, 
     if (!isAdmin && c.assigned_agent !== agentName) return false;
     if (isAdmin && fAgent && c.assigned_agent !== fAgent) return false;
     if (fPromo && c.assigned_promo !== fPromo) return false;
+    if (c.assigned_promo && !promos.some(p => p.name === c.assigned_promo)) return false;
     const q = search.toLowerCase();
     if (q && !(c.name || "").toLowerCase().includes(q) && !(c.phone || "").includes(q)) return false;
     return true;
@@ -1580,10 +1581,20 @@ function AdminPage({ contacts, calls, agents, promos, onRefresh, onLogout, toast
       setPModal(null); setPSel(null); onRefresh();
     } catch { toast("Error.", "error"); }
   }
-  async function delPromo(id, name) {
-    if (!window.confirm(`Delete "${name}"?`)) return;
-    try { await db.remove("promotions", id); toast("Deleted.", "error"); onRefresh(); }
-    catch { toast("Error.", "error"); }
+ async function delPromo(id, name) {
+    if (!window.confirm(`Delete "${name}"? This will also unassign all contacts from this campaign.`)) return;
+    try {
+      // 1. Clear assigned_promo on all contacts that belong to this campaign
+      await fetch(`${SUPABASE_URL}/rest/v1/contacts?assigned_promo=eq.${encodeURIComponent(name)}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ assigned_promo: null, assigned_agent: null, lead_status: "Pending" })
+      });
+      // 2. Delete the promo itself
+      await db.remove("promotions", id);
+      toast("Campaign deleted and contacts unassigned.", "error");
+      onRefresh();
+    } catch { toast("Error.", "error"); }
   }
   function editPromo(p) { setPSel(p); setPForm({ name: p.name, description: p.description || "", status: p.status, start_date: p.start_date || "", end_date: p.end_date || "", target_audience: p.target_audience || "All" }); setPModal("edit"); }
 
