@@ -1102,7 +1102,7 @@ function LeadsTab({ contacts, calls, agents, promos, onRefresh, toast, isAdmin, 
 function FollowUpTab({ calls, contacts, isAdmin, agentName, onRefresh, toast, promos, agents }) {
   const [page, setPage] = useState(0); const [editCall, setEditCall] = useState(null); const [logContact, setLogContact] = useState(null); const [fAgent, setFAgent] = useState(""); const PAGE = 10;
   const today = new Date().toISOString().slice(0, 10);
-  const followUps = useMemo(() => calls.filter(c => c.outcome === "Callback Requested" && !c.callback_done).filter(c => isAdmin ? (!fAgent || c.agent_name === fAgent) : c.agent_name === agentName).sort((a, b) => (a.callback_date || "9").localeCompare(b.callback_date || "9")), [calls, isAdmin, agentName, fAgent]);
+  const followUps = useMemo(() => calls.filter(c => c.outcome === "Callback Requested" && !c.callback_done).filter(c => isAdmin ? (!fAgent || c.agent_name === fAgent) : c.agent_name === agentName).sort((a, b) => (b.call_date || "").localeCompare(a.call_date || "")), [calls, isAdmin, agentName, fAgent]);
   const overdue = followUps.filter(c => { const d = c.call_date ? Math.floor((Date.now() - new Date(c.call_date)) / 86400000) : 0; return d >= 10; });
   useEffect(() => setPage(0), [fAgent]);
   return (
